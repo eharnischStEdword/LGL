@@ -219,9 +219,12 @@ export default function Dashboard() {
       const resp = await fetch(endpoint);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
       const ct = resp.headers.get("content-type") || "";
+      const lm = resp.headers.get("last-modified");
       const buf = await resp.arrayBuffer();
       const allRows = parseSpreadsheet(buf, ct);
       const label = offertoryOnly ? "LGL - Offertory (live)" : "LGL - All Funds (live)";
+      // Use LGL's Last-Modified timestamp (when the report was generated), not "right now"
+      setDataLoadedAt(lm ? new Date(lm) : new Date());
       loadRows(allRows, label);
     } catch (err) {
       setError(`Could not fetch from LGL: ${err.message}`);
@@ -258,7 +261,7 @@ export default function Dashboard() {
     setSelectedFunds(initial);
     setLoaded(true);
     setError(null);
-    setDataLoadedAt(new Date());
+    // dataLoadedAt is set by fetchFromLGL using LGL's Last-Modified header
   }, []);
 
 
@@ -565,9 +568,13 @@ export default function Dashboard() {
             </h1>
             <p style={{ margin: 0, fontSize: 16, color: "#888" }}>
               {fileName} &middot; {rawGifts.length.toLocaleString()} gifts &middot; {funds.length} fund{funds.length !== 1 ? "s" : ""}
-              {dataLoadedAt && (
-                <> &middot; Loaded {dataLoadedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} at {dataLoadedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</>
-              )}
+              {dataLoadedAt && (() => {
+                const hrs = Math.round((Date.now() - dataLoadedAt.getTime()) / 3600000);
+                const ago = hrs < 1 ? "just now" : hrs === 1 ? "1 hour ago" : `${hrs} hours ago`;
+                return (
+                  <> &middot; Report generated {dataLoadedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} at {dataLoadedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} ({ago})</>
+                );
+              })()}
             </p>
           </div>
         </div>

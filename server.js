@@ -204,6 +204,9 @@ async function proxyLGL(url, res) {
   // Forward the actual content type from LGL (could be xlsx or csv)
   const ct = resp.headers.get("content-type") || "application/octet-stream";
   res.set("Content-Type", ct);
+  // Forward Last-Modified so the frontend knows when LGL generated the report
+  const lm = resp.headers.get("last-modified");
+  if (lm) res.set("Last-Modified", lm);
   res.send(Buffer.from(buf));
 }
 
