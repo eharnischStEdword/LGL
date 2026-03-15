@@ -3,7 +3,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, BarChart, Bar, LabelList
 } from "recharts";
-import Papa from "papaparse";
+// Papa removed — no longer needed since we pull directly from LGL
 import * as XLSX from "xlsx";
 
 /*
@@ -33,7 +33,8 @@ const FY_START_MONTH = 7; // July
 const DATA_FLOOR = new Date(2025, 0, 1); // January 1, 2025 — nothing before this
 
 // Proxied through our server to avoid CORS issues
-const LGL_DATA_ENDPOINT = "/api/lgl-data";
+const LGL_OFFERTORY_ENDPOINT = "/api/lgl-data";
+const LGL_ALL_FUNDS_ENDPOINT = "/api/lgl-all-funds";
 
 const sans = "'Trebuchet MS', 'Calibri', sans-serif";
 const serif = "'Georgia', 'Cambria', serif";
@@ -219,27 +220,15 @@ export default function Dashboard() {
     setError(null);
     setFetching(true);
     try {
-      const resp = await fetch(LGL_DATA_ENDPOINT);
+      const endpoint = offertoryOnly ? LGL_OFFERTORY_ENDPOINT : LGL_ALL_FUNDS_ENDPOINT;
+      const resp = await fetch(endpoint);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
       const buf = await resp.arrayBuffer();
       const allRows = parseXlsx(buf);
-      if (offertoryOnly) {
-        // Filter to only Offertory fund rows before loading
-        const hdrs = Object.keys(allRows[0] || {});
-        const detected = detectColumns(hdrs);
-        if (detected.fundCol) {
-          const filtered = allRows.filter(r =>
-            (r[detected.fundCol] || "").toLowerCase().includes("offertory")
-          );
-          loadRows(filtered.length > 0 ? filtered : allRows, "LGL - Offertory (live)");
-        } else {
-          loadRows(allRows, "LGL Scheduled Report (live)");
-        }
-      } else {
-        loadRows(allRows, "LGL - All Funds (live)");
-      }
+      const label = offertoryOnly ? "LGL - Offertory (live)" : "LGL - All Funds (live)";
+      loadRows(allRows, label);
     } catch (err) {
-      setError(`Could not fetch from LGL: ${err.message}. Try uploading the file manually instead.`);
+      setError(`Could not fetch from LGL: ${err.message}`);
     } finally {
       setFetching(false);
     }
@@ -522,111 +511,15 @@ export default function Dashboard() {
             Pulls all fund data from LGL (Offertory, Capital Campaign, etc.)
           </p>
 
-          <div style={{
-            display: "flex", alignItems: "center", gap: 14,
-            marginBottom: 16, color: "#aaa", fontSize: 16
-          }}>
-            <div style={{ flex: 1, height: 1, background: "#ddd" }} />
-            <span>or upload a file manually</span>
-            <div style={{ flex: 1, height: 1, background: "#ddd" }} />
-          </div>
-
-          {/* Manual upload instructions + drop zone */}
-          <div style={{
-            marginBottom: 16, padding: "14px 18px",
-            background: "#fff", borderRadius: 8,
-            border: `1px solid ${SE_GREEN}15`,
-            textAlign: "left", fontSize: 16,
-            color: "#666", lineHeight: 1.8,
-          }}>
-            <div style={{
-              fontSize: 16, fontWeight: 700, color: SE_GREEN,
-              letterSpacing: "0.08em", textTransform: "uppercase",
-              marginBottom: 6
-            }}>
-              How to export from LGL
-            </div>
-            <div>
-              <strong>1.</strong> In LGL, run a <strong>Comprehensive Export</strong><br/>
-              <strong>2.</strong> Unzip the downloaded file<br/>
-              <strong>3.</strong> Open the <strong>Full_Archive</strong> folder<br/>
-              <strong>4.</strong> Upload <strong>gift_gifts.csv</strong> below
-            </div>
-          </div>
-
-          <div
-            onClick={() => fileRef.current?.click()}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
-            style={{
-              border: `2px dashed ${dragOver ? SE_GREEN : SE_GREEN + "44"}`,
-              borderRadius: 12,
-              padding: "28px 24px",
-              cursor: "pointer",
-              transition: "all 0.2s",
-              background: dragOver ? `${SE_GREEN}08` : "#fff",
-              boxShadow: "0 1px 4px rgba(0,89,33,0.06)"
-            }}
-          >
-            <div style={{ fontSize: 16, color: "#888" }}>
-              {fileName ? fileName : "Click or drag a CSV or Excel file here"}
-            </div>
-            <input
-              ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls"
-              style={{ display: "none" }}
-              onChange={(e) => { const f = e.target.files[0]; if (f) handleFile(f); }}
-            />
-          </div>
-
-          {/* Error + manual mapping */}
+          {/* Error display */}
           {error && (
             <div style={{
-              marginTop: 20, padding: "14px 18px",
+              marginTop: 10, padding: "14px 18px",
               background: "#fff8f0", border: "1px solid #e8c87040",
               borderRadius: 8, fontSize: 16, color: "#8B6914",
               textAlign: "left", lineHeight: 1.5
             }}>
               {error}
-              {headers.length > 0 && (
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {[
-                      { label: "Date column", key: "dateCol" },
-                      { label: "Amount column", key: "amountCol" },
-                      { label: "Fund column", key: "fundCol" }
-                    ].map(({ label, key }) => (
-                      <div key={key} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span style={{ width: 140, color: "#666", fontSize: 16 }}>{label}:</span>
-                        <select
-                          value={colMapping[key] || ""}
-                          onChange={(e) => setColMapping(prev => ({ ...prev, [key]: e.target.value || null }))}
-                          style={{
-                            flex: 1, background: "#fff", color: "#333",
-                            border: `1px solid ${SE_GREEN}30`, borderRadius: 5,
-                            padding: "8px 10px", fontSize: 16
-                          }}
-                        >
-                          <option value="">Select...</option>
-                          {headers.map(h => <option key={h} value={h}>{h}</option>)}
-                        </select>
-                      </div>
-                    ))}
-                    <button
-                      onClick={applyMapping}
-                      disabled={!colMapping.dateCol || !colMapping.amountCol || !colMapping.fundCol}
-                      style={{
-                        marginTop: 6, padding: "9px 22px",
-                        background: (colMapping.dateCol && colMapping.amountCol && colMapping.fundCol) ? SE_GREEN : "#ccc",
-                        color: "#fff", border: "none", borderRadius: 6,
-                        fontSize: 16, fontWeight: 700, cursor: "pointer"
-                      }}
-                    >
-                      Load Data
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -924,6 +817,139 @@ export default function Dashboard() {
           })}
         </div>
       </div>
+
+      {/* ─── Bulletin Snapshot ─── */}
+      {loaded && (() => {
+        // Find the Offertory fund
+        const offertoryFund = funds.find(f => f.toLowerCase().includes("offertory"));
+        if (!offertoryFund) return null;
+
+        const now = new Date();
+        // Last full calendar month
+        const lastMonth = now.getMonth() === 0
+          ? new Date(now.getFullYear() - 1, 11, 1)
+          : new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        // Month before that
+        const prevMonth = lastMonth.getMonth() === 0
+          ? new Date(lastMonth.getFullYear() - 1, 11, 1)
+          : new Date(lastMonth.getFullYear(), lastMonth.getMonth() - 1, 1);
+        // Same month 1 year ago
+        const lastYearMonth = new Date(lastMonth.getFullYear() - 1, lastMonth.getMonth(), 1);
+
+        function monthTotal(targetMonth, targetYear) {
+          return rawGifts
+            .filter(g => g.fund === offertoryFund && g.date.getMonth() === targetMonth && g.date.getFullYear() === targetYear)
+            .reduce((sum, g) => sum + g.amount, 0);
+        }
+
+        const lastMonthTotal = monthTotal(lastMonth.getMonth(), lastMonth.getFullYear());
+        const prevMonthTotal = monthTotal(prevMonth.getMonth(), prevMonth.getFullYear());
+        const lastYearTotal = monthTotal(lastYearMonth.getMonth(), lastYearMonth.getFullYear());
+        const monthDiff = lastMonthTotal - prevMonthTotal;
+        const yearDiff = lastMonthTotal - lastYearTotal;
+
+        const monthName = (d) => `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+        const diffColor = (v) => v >= 0 ? SE_GREEN : "#c0392b";
+        const diffSign = (v) => v >= 0 ? "+" : "";
+
+        return (
+          <div style={{
+            background: "#fff", border: `1px solid ${SE_GREEN}12`,
+            borderRadius: 8, padding: "18px 22px", marginTop: 18,
+            boxShadow: "0 1px 4px rgba(0,89,33,0.04)"
+          }}>
+            <div style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              marginBottom: 14
+            }}>
+              <span style={{ fontSize: 20, fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif }}>
+                Financial Snapshot ({monthName(lastMonth)})
+              </span>
+              <span style={{
+                fontSize: 16, color: "#aaa", fontStyle: "italic"
+              }}>
+                For parish bulletin
+              </span>
+            </div>
+
+            {/* Monthly Collections */}
+            <div style={{
+              background: `${SE_GREEN}08`, borderRadius: 6, padding: "12px 16px",
+              marginBottom: 12
+            }}>
+              <div style={{
+                fontSize: 16, fontWeight: 700, color: SE_GREEN_DARK,
+                textTransform: "uppercase", letterSpacing: "0.06em",
+                marginBottom: 10, fontFamily: sans
+              }}>
+                Monthly Offertory Collections
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 16, fontFamily: sans }}>
+                <tbody>
+                  <tr>
+                    <td style={{ padding: "6px 0", color: "#444" }}>{monthName(lastMonth)}</td>
+                    <td style={{ padding: "6px 0", textAlign: "right", fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif, fontSize: 18 }}>
+                      {fmtFull(lastMonthTotal)}
+                    </td>
+                  </tr>
+                  <tr style={{ borderTop: "1px solid #eee" }}>
+                    <td style={{ padding: "6px 0", color: "#444" }}>{monthName(prevMonth)}</td>
+                    <td style={{ padding: "6px 0", textAlign: "right", fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif, fontSize: 18 }}>
+                      {fmtFull(prevMonthTotal)}
+                    </td>
+                  </tr>
+                  <tr style={{ borderTop: "1px solid #eee" }}>
+                    <td style={{ padding: "6px 0", color: "#666" }}>{monthName(lastYearMonth)} <span style={{ color: "#aaa" }}>(comparison)</span></td>
+                    <td style={{ padding: "6px 0", textAlign: "right", fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif, fontSize: 18 }}>
+                      {lastYearTotal > 0 ? fmtFull(lastYearTotal) : <span style={{ color: "#aaa", fontWeight: 400, fontSize: 16 }}>No data</span>}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Comparisons */}
+            <div style={{
+              background: `${SE_GOLD}10`, borderRadius: 6, padding: "12px 16px",
+            }}>
+              <div style={{
+                fontSize: 16, fontWeight: 700, color: "#8B6914",
+                textTransform: "uppercase", letterSpacing: "0.06em",
+                marginBottom: 10, fontFamily: sans
+              }}>
+                Comparisons
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 16, fontFamily: sans }}>
+                <tbody>
+                  <tr>
+                    <td style={{ padding: "6px 0", color: "#444" }}>
+                      Month-to-month ({MONTHS[lastMonth.getMonth()]} vs {MONTHS[prevMonth.getMonth()]})
+                    </td>
+                    <td style={{ padding: "6px 0", textAlign: "right", fontWeight: 700, color: diffColor(monthDiff), fontFamily: serif, fontSize: 18 }}>
+                      {diffSign(monthDiff)}{fmtFull(Math.abs(monthDiff))}
+                    </td>
+                  </tr>
+                  {lastYearTotal > 0 && (
+                    <tr style={{ borderTop: "1px solid #eee" }}>
+                      <td style={{ padding: "6px 0", color: "#444" }}>
+                        Year-over-year ({monthName(lastMonth)} vs {monthName(lastYearMonth)})
+                      </td>
+                      <td style={{ padding: "6px 0", textAlign: "right", fontWeight: 700, color: diffColor(yearDiff), fontFamily: serif, fontSize: 18 }}>
+                        {diffSign(yearDiff)}{fmtFull(Math.abs(yearDiff))}
+                        {lastYearTotal > 0 && (
+                          <span style={{ fontSize: 16, fontWeight: 400, color: diffColor(yearDiff), marginLeft: 6 }}>
+                            ({diffSign(yearDiff)}{((yearDiff / lastYearTotal) * 100).toFixed(1)}%)
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
 
       <div style={{ marginTop: 16, fontSize: 16, color: "#aaa", textAlign: "center" }}>
         Gifts aggregated by calendar month per fund. Fiscal year begins July 1. Dashed lines show trend.

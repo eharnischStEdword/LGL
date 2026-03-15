@@ -25,7 +25,8 @@ const ALLOWED_USERS = (process.env.ALLOWED_DASHBOARD_USERS || [
 
 const AUTH_ENABLED = !!CLIENT_SECRET;
 
-const LGL_URL = "https://stedward.littlegreenlight.com/rptlink/5957dd30-a1b2-402b-b30a-3bd21e02f604";
+const LGL_OFFERTORY_URL = "https://stedward.littlegreenlight.com/rptlink/5957dd30-a1b2-402b-b30a-3bd21e02f604";
+const LGL_ALL_FUNDS_URL = "https://stedward.littlegreenlight.com/rptlink/e7599438-bb83-4b84-b3ca-955a11f03004";
 const AUTHORIZE_URL = `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/authorize`;
 const TOKEN_URL = `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`;
 
@@ -192,18 +193,28 @@ app.get("/auth/logout", (req, res) => {
 });
 
 // ─── Protected API ───
-app.get("/api/lgl-data", requireAuth, async (req, res) => {
-  try {
-    const resp = await fetch(LGL_URL);
-    if (!resp.ok) {
-      return res.status(resp.status).json({ error: `LGL returned ${resp.status}` });
-    }
-    const buf = await resp.arrayBuffer();
-    res.set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.send(Buffer.from(buf));
-  } catch (err) {
-    res.status(502).json({ error: err.message });
+
+// Helper to proxy an LGL permanent link
+async function proxyLGL(url, res) {
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    return res.status(resp.status).json({ error: `LGL returned ${resp.status}` });
   }
+  const buf = await resp.arrayBuffer();
+  res.set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.send(Buffer.from(buf));
+}
+
+// Offertory-only report
+app.get("/api/lgl-data", requireAuth, async (req, res) => {
+  try { await proxyLGL(LGL_OFFERTORY_URL, res); }
+  catch (err) { res.status(502).json({ error: err.message }); }
+});
+
+// All-funds report
+app.get("/api/lgl-all-funds", requireAuth, async (req, res) => {
+  try { await proxyLGL(LGL_ALL_FUNDS_URL, res); }
+  catch (err) { res.status(502).json({ error: err.message }); }
 });
 
 // ─── Auth gate: redirect unauthenticated users to login ───
