@@ -1,9 +1,10 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer, BarChart, Bar
+  Tooltip, Legend, ResponsiveContainer, BarChart, Bar, LabelList
 } from "recharts";
 import Papa from "papaparse";
+import * as XLSX from "xlsx";
 
 /*
   St. Edward Church & School, Nashville TN
@@ -18,7 +19,6 @@ import Papa from "papaparse";
 const SE_GREEN = "#00843D";
 const SE_GREEN_DARK = "#005921";
 const SE_GOLD = "#DAAA00";
-const SE_GOLD_LIGHT = "#DDCC71";
 const SE_BLUE = "#003764";
 const SE_OFFWHITE = "#EEF4F1";
 
@@ -30,12 +30,32 @@ const FUND_COLORS = [
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const FY_START_MONTH = 7; // July
+const DATA_FLOOR = new Date(2025, 0, 1); // January 1, 2025 — nothing before this
+
+// Proxied through our server to avoid CORS issues
+const LGL_DATA_ENDPOINT = "/api/lgl-data";
 
 const sans = "'Trebuchet MS', 'Calibri', sans-serif";
 const serif = "'Georgia', 'Cambria', serif";
 
+// Fiscal month labels in FY order (Jul=0 through Jun=11)
+const FY_MONTH_LABELS = ["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"];
+
+function parseXlsx(arrayBuffer) {
+  const wb = XLSX.read(arrayBuffer, { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(ws, { defval: "" });
+}
+
 function parseDateFlexible(str) {
   if (!str) return null;
+  // Handle Excel serial date numbers (e.g., 46093 or 46093.0)
+  const num = typeof str === "number" ? str : parseFloat(str);
+  if (!isNaN(num) && num > 25000 && num < 60000) {
+    // Excel serial: days since 1899-12-30 (use local time, not UTC)
+    const d = new Date(1899, 11, 30 + Math.floor(num));
+    if (!isNaN(d.getTime())) return d;
+  }
   const d = new Date(str);
   if (!isNaN(d.getTime())) return d;
   return null;
@@ -91,6 +111,33 @@ function getFYLabel() {
   return `FY ${start.getFullYear()}-${String(endYear).slice(2)}`;
 }
 
+// Linear regression trend line computation
+function computeTrend(data, key) {
+  const points = data.map((d, i) => ({ x: i, y: d[key] || 0 }));
+  const n = points.length;
+  if (n < 2) return null;
+  let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+  for (const p of points) {
+    sumX += p.x; sumY += p.y; sumXY += p.x * p.y; sumXX += p.x * p.x;
+  }
+  const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+  const intercept = (sumY - slope * sumX) / n;
+  return data.map((d, i) => ({ ...d, [`${key}_trend`]: Math.max(0, intercept + slope * i) }));
+}
+
+// Custom label for data points
+const DataLabel = ({ x, y, width, value }) => {
+  if (!value || value === 0) return null;
+  const label = value >= 1000 ? `$${(value/1000).toFixed(1)}k` : `$${value.toFixed(0)}`;
+  // For bars, Recharts passes width — center the label over the bar
+  const cx = width != null ? x + width / 2 : x;
+  return (
+    <text x={cx} y={y - 12} textAnchor="middle" fill="#555" fontSize={16} fontFamily={sans}>
+      {label}
+    </text>
+  );
+};
+
 export default function Dashboard() {
   const [rawGifts, setRawGifts] = useState([]);
   const [funds, setFunds] = useState([]);
@@ -103,37 +150,100 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
   const [fileName, setFileName] = useState(null);
   const [dragOver, setDragOver] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [authUser, setAuthUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const fileRef = useRef(null);
+
+  // Check authentication status on mount
+  useEffect(() => {
+    fetch("/auth/status")
+      .then(r => r.json())
+      .then(data => {
+        if (data.authenticated) {
+          setAuthUser(data.user);
+        }
+        setAuthChecked(true);
+      })
+      .catch(() => setAuthChecked(true));
+  }, []);
+
+  const loadRows = useCallback((rows, sourceName) => {
+    if (!rows || rows.length === 0) {
+      setError("File appears empty or could not be parsed.");
+      return;
+    }
+    const hdrs = Object.keys(rows[0]);
+    setHeaders(hdrs);
+    setFileName(sourceName);
+    const detected = detectColumns(hdrs);
+    if (!detected.dateCol || !detected.amountCol || !detected.fundCol) {
+      setColMapping(detected);
+      setError(
+        `Could not auto-detect all columns. Found: Date="${detected.dateCol || "?"}", Amount="${detected.amountCol || "?"}", Fund="${detected.fundCol || "?"}". Use the dropdowns below to map them.`
+      );
+      setRawGifts(rows);
+      setLoaded(false);
+      return;
+    }
+    setColMapping(detected);
+    processData(rows, detected);
+  }, []);
 
   const handleFile = useCallback((file) => {
     setError(null);
     setFileName(file.name);
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        if (!results.data || results.data.length === 0) {
-          setError("CSV appears empty or could not be parsed.");
-          return;
+    const isXlsx = file.name.match(/\.xlsx?$/i);
+    if (isXlsx) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const rows = parseXlsx(e.target.result);
+          loadRows(rows, file.name);
+        } catch (err) {
+          setError(`Excel parse error: ${err.message}`);
         }
-        const hdrs = results.meta.fields || [];
-        setHeaders(hdrs);
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => loadRows(results.data, file.name),
+        error: (err) => setError(`Parse error: ${err.message}`)
+      });
+    }
+  }, [loadRows]);
+
+  const fetchFromLGL = useCallback(async (offertoryOnly = false) => {
+    setError(null);
+    setFetching(true);
+    try {
+      const resp = await fetch(LGL_DATA_ENDPOINT);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+      const buf = await resp.arrayBuffer();
+      const allRows = parseXlsx(buf);
+      if (offertoryOnly) {
+        // Filter to only Offertory fund rows before loading
+        const hdrs = Object.keys(allRows[0] || {});
         const detected = detectColumns(hdrs);
-        if (!detected.dateCol || !detected.amountCol || !detected.fundCol) {
-          setColMapping(detected);
-          setError(
-            `Could not auto-detect all columns. Found: Date="${detected.dateCol || "?"}", Amount="${detected.amountCol || "?"}", Fund="${detected.fundCol || "?"}". Use the dropdowns below to map them.`
+        if (detected.fundCol) {
+          const filtered = allRows.filter(r =>
+            (r[detected.fundCol] || "").toLowerCase().includes("offertory")
           );
-          setRawGifts(results.data);
-          setLoaded(false);
-          return;
+          loadRows(filtered.length > 0 ? filtered : allRows, "LGL - Offertory (live)");
+        } else {
+          loadRows(allRows, "LGL Scheduled Report (live)");
         }
-        setColMapping(detected);
-        processData(results.data, detected);
-      },
-      error: (err) => setError(`Parse error: ${err.message}`)
-    });
-  }, []);
+      } else {
+        loadRows(allRows, "LGL - All Funds (live)");
+      }
+    } catch (err) {
+      setError(`Could not fetch from LGL: ${err.message}. Try uploading the file manually instead.`);
+    } finally {
+      setFetching(false);
+    }
+  }, [loadRows]);
 
   const processData = useCallback((data, mapping) => {
     const { dateCol, amountCol, fundCol } = mapping;
@@ -144,7 +254,7 @@ export default function Dashboard() {
       const date = parseDateFlexible(row[dateCol]);
       const amount = parseAmount(row[amountCol]);
       const fund = (row[fundCol] || "").trim();
-      if (date && fund) {
+      if (date && fund && date >= DATA_FLOOR) {
         gifts.push({ date, amount, fund });
         fundSet.add(fund);
       }
@@ -172,14 +282,17 @@ export default function Dashboard() {
   }, [colMapping, rawGifts, processData]);
 
   const filteredData = useMemo(() => {
-    if (!loaded || rawGifts.length === 0) return [];
+    if (!loaded || rawGifts.length === 0 || timeRange === "yoy") return [];
     const now = new Date();
     let startDate;
     if (timeRange === "last12") startDate = new Date(now.getFullYear() - 1, now.getMonth(), 1);
     else if (timeRange === "ytd") startDate = new Date(now.getFullYear(), 0, 1);
     else if (timeRange === "fy") startDate = getFYStart(now);
     else if (timeRange === "last24") startDate = new Date(now.getFullYear() - 2, now.getMonth(), 1);
-    else if (timeRange === "all") startDate = new Date(2000, 0, 1);
+    else if (timeRange === "all") startDate = new Date(DATA_FLOOR);
+    else startDate = new Date(DATA_FLOOR);
+    // Enforce hard floor
+    if (startDate < DATA_FLOOR) startDate = new Date(DATA_FLOOR);
     const relevant = rawGifts.filter(g => g.date >= startDate && g.date <= now && selectedFunds.has(g.fund));
     const monthMap = {};
     for (const g of relevant) {
@@ -201,12 +314,71 @@ export default function Dashboard() {
     });
   }, [rawGifts, selectedFunds, timeRange, loaded]);
 
+  // Add trend data to filteredData
+  const chartData = useMemo(() => {
+    if (filteredData.length < 2) return filteredData;
+    let result = filteredData;
+    for (const f of selectedFunds) {
+      const withTrend = computeTrend(result, f);
+      if (withTrend) result = withTrend;
+    }
+    return result;
+  }, [filteredData, selectedFunds]);
+
   const totals = useMemo(() => {
     if (!loaded) return {};
     const t = {};
     for (const f of selectedFunds) t[f] = filteredData.reduce((sum, row) => sum + (row[f] || 0), 0);
     return t;
   }, [filteredData, selectedFunds, loaded]);
+
+  // ─── YoY comparison data ───
+  const yoyData = useMemo(() => {
+    if (!loaded || rawGifts.length === 0 || timeRange !== "yoy") return [];
+    const now = new Date();
+    const fyYears = [2024, 2025];
+    const rows = FY_MONTH_LABELS.map((label, fyMonthIdx) => {
+      const row = { month: label };
+      for (const fy of fyYears) {
+        const calMonth = (fyMonthIdx + FY_START_MONTH - 1) % 12;
+        const calYear = fyMonthIdx < 6 ? fy : fy + 1;
+        for (const fund of selectedFunds) {
+          const key = `${fund} (${fy}-${String(fy + 1).slice(2)})`;
+          let total = 0;
+          for (const g of rawGifts) {
+            if (g.fund === fund
+              && g.date.getMonth() === calMonth
+              && g.date.getFullYear() === calYear
+              && g.date <= now) {
+              total += g.amount;
+            }
+          }
+          row[key] = total;
+        }
+      }
+      return row;
+    });
+    return rows;
+  }, [rawGifts, selectedFunds, timeRange, loaded]);
+
+  const yoySeriesKeys = useMemo(() => {
+    if (timeRange !== "yoy") return [];
+    const keys = [];
+    for (const fund of [...selectedFunds].sort()) {
+      keys.push(`${fund} (2024-25)`);
+      keys.push(`${fund} (2025-26)`);
+    }
+    return keys;
+  }, [selectedFunds, timeRange]);
+
+  const yoyTotals = useMemo(() => {
+    if (timeRange !== "yoy" || yoyData.length === 0) return {};
+    const t = {};
+    for (const key of yoySeriesKeys) {
+      t[key] = yoyData.reduce((sum, row) => sum + (row[key] || 0), 0);
+    }
+    return t;
+  }, [yoyData, yoySeriesKeys, timeRange]);
 
   const toggleFund = (fund) => {
     setSelectedFunds(prev => {
@@ -224,19 +396,21 @@ export default function Dashboard() {
 
   const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload) return null;
+    // Filter out trend lines from tooltip
+    const real = payload.filter(p => !p.dataKey.endsWith("_trend"));
     return (
       <div style={{
         background: SE_GREEN_DARK,
         border: `1px solid ${SE_GOLD}44`,
         borderRadius: 6,
-        padding: "10px 14px",
-        fontSize: 13,
+        padding: "12px 16px",
+        fontSize: 16,
         color: SE_OFFWHITE,
         fontFamily: sans,
         boxShadow: "0 8px 24px rgba(0,0,0,0.5)"
       }}>
         <div style={{ fontWeight: 700, marginBottom: 6, color: "#fff", fontFamily: serif }}>{label}</div>
-        {payload.map((p, i) => (
+        {real.map((p, i) => (
           <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 24, marginBottom: 3 }}>
             <span style={{ color: p.color }}>{p.dataKey}</span>
             <span style={{ fontWeight: 700, color: "#fff" }}>{fmtFull(p.value)}</span>
@@ -248,6 +422,16 @@ export default function Dashboard() {
 
   const fundColorMap = {};
   funds.forEach((f, i) => { fundColorMap[f] = FUND_COLORS[i % FUND_COLORS.length]; });
+
+  // YoY colors
+  const yoyColorMap = {};
+  for (const fund of funds) {
+    const base = fundColorMap[fund];
+    yoyColorMap[`${fund} (2024-25)`] = base;
+    yoyColorMap[`${fund} (2025-26)`] = base;
+  }
+
+  const activeFunds = [...selectedFunds].sort();
 
   // ─── UPLOAD SCREEN ───
   if (!loaded) {
@@ -280,7 +464,7 @@ export default function Dashboard() {
             St. Edward Church
           </h1>
           <p style={{
-            color: SE_GOLD, fontSize: 12, marginBottom: 4,
+            color: SE_GOLD, fontSize: 16, marginBottom: 4,
             letterSpacing: "0.12em", textTransform: "uppercase",
             fontWeight: 700, fontFamily: sans
           }}>
@@ -291,32 +475,78 @@ export default function Dashboard() {
             background: `linear-gradient(90deg, ${SE_GREEN}, ${SE_GOLD})`
           }} />
 
-          {/* Instructions */}
+          {/* Option 1: Offertory auto-pull */}
+          <button
+            onClick={() => fetchFromLGL(true)}
+            disabled={fetching}
+            style={{
+              width: "100%", padding: "16px 24px",
+              background: fetching ? "#ccc" : SE_GREEN,
+              color: "#fff", border: "none", borderRadius: 10,
+              fontSize: 18, fontWeight: 700, cursor: fetching ? "wait" : "pointer",
+              fontFamily: serif, marginBottom: 10,
+              boxShadow: "0 2px 8px rgba(0,132,61,0.25)",
+              transition: "all 0.2s"
+            }}
+          >
+            {fetching ? "Fetching from LGL..." : "Load Offertory Data"}
+          </button>
+          <p style={{ fontSize: 16, color: "#999", marginTop: 0, marginBottom: 18 }}>
+            Pulls the latest Offertory giving data directly from LGL. Reports are automatically refreshed once every weekday.
+          </p>
+
+          {/* Option 2: All funds */}
+          <button
+            onClick={() => fetchFromLGL(false)}
+            disabled={fetching}
+            style={{
+              width: "100%", padding: "14px 24px",
+              background: "#fff",
+              color: SE_GREEN_DARK, border: `2px solid ${SE_GREEN}`,
+              borderRadius: 10,
+              fontSize: 18, fontWeight: 700, cursor: fetching ? "wait" : "pointer",
+              fontFamily: serif, marginBottom: 10,
+              transition: "all 0.2s"
+            }}
+          >
+            Load All Funds Report
+          </button>
+          <p style={{ fontSize: 16, color: "#999", marginTop: 0, marginBottom: 20 }}>
+            Pulls all fund data from LGL (Offertory, Capital Campaign, etc.)
+          </p>
+
           <div style={{
-            marginBottom: 24, padding: "18px 22px",
+            display: "flex", alignItems: "center", gap: 14,
+            marginBottom: 16, color: "#aaa", fontSize: 16
+          }}>
+            <div style={{ flex: 1, height: 1, background: "#ddd" }} />
+            <span>or upload a file manually</span>
+            <div style={{ flex: 1, height: 1, background: "#ddd" }} />
+          </div>
+
+          {/* Manual upload instructions + drop zone */}
+          <div style={{
+            marginBottom: 16, padding: "14px 18px",
             background: "#fff", borderRadius: 8,
-            border: `1px solid ${SE_GREEN}20`,
-            textAlign: "left", fontSize: 13.5,
-            color: "#444", lineHeight: 1.8,
-            boxShadow: "0 1px 4px rgba(0,89,33,0.06)"
+            border: `1px solid ${SE_GREEN}15`,
+            textAlign: "left", fontSize: 16,
+            color: "#666", lineHeight: 1.8,
           }}>
             <div style={{
-              fontSize: 11, fontWeight: 700, color: SE_GREEN,
+              fontSize: 16, fontWeight: 700, color: SE_GREEN,
               letterSpacing: "0.08em", textTransform: "uppercase",
-              marginBottom: 10
+              marginBottom: 6
             }}>
-              How to get the file from LGL
+              How to export from LGL
             </div>
             <div>
-              <span style={{ color: SE_GREEN_DARK, fontWeight: 700 }}>1.</span> In LGL, run a <strong>Comprehensive Export</strong><br/>
-              <span style={{ color: SE_GREEN_DARK, fontWeight: 700 }}>2.</span> Unzip the downloaded file<br/>
-              <span style={{ color: SE_GREEN_DARK, fontWeight: 700 }}>3.</span> Open the extracted folder<br/>
-              <span style={{ color: SE_GREEN_DARK, fontWeight: 700 }}>4.</span> Open the <strong>Full_Archive</strong> folder inside it<br/>
-              <span style={{ color: SE_GREEN_DARK, fontWeight: 700 }}>5.</span> Drop <strong>gift_gifts.csv</strong> into the box below
+              <strong>1.</strong> In LGL, run a <strong>Comprehensive Export</strong><br/>
+              <strong>2.</strong> Unzip the downloaded file<br/>
+              <strong>3.</strong> Open the <strong>Full_Archive</strong> folder<br/>
+              <strong>4.</strong> Upload <strong>gift_gifts.csv</strong> below
             </div>
           </div>
 
-          {/* Drop zone */}
           <div
             onClick={() => fileRef.current?.click()}
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -325,19 +555,18 @@ export default function Dashboard() {
             style={{
               border: `2px dashed ${dragOver ? SE_GREEN : SE_GREEN + "44"}`,
               borderRadius: 12,
-              padding: "44px 32px",
+              padding: "28px 24px",
               cursor: "pointer",
               transition: "all 0.2s",
               background: dragOver ? `${SE_GREEN}08` : "#fff",
               boxShadow: "0 1px 4px rgba(0,89,33,0.06)"
             }}
           >
-            <div style={{ fontSize: 32, marginBottom: 8, color: SE_GREEN, fontWeight: 700 }}>CSV</div>
-            <div style={{ fontSize: 14, color: "#888" }}>
-              {fileName ? fileName : "Click or drag gift_gifts.csv here"}
+            <div style={{ fontSize: 16, color: "#888" }}>
+              {fileName ? fileName : "Click or drag a CSV or Excel file here"}
             </div>
             <input
-              ref={fileRef} type="file" accept=".csv,.txt"
+              ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls"
               style={{ display: "none" }}
               onChange={(e) => { const f = e.target.files[0]; if (f) handleFile(f); }}
             />
@@ -348,7 +577,7 @@ export default function Dashboard() {
             <div style={{
               marginTop: 20, padding: "14px 18px",
               background: "#fff8f0", border: "1px solid #e8c87040",
-              borderRadius: 8, fontSize: 13, color: "#8B6914",
+              borderRadius: 8, fontSize: 16, color: "#8B6914",
               textAlign: "left", lineHeight: 1.5
             }}>
               {error}
@@ -361,14 +590,14 @@ export default function Dashboard() {
                       { label: "Fund column", key: "fundCol" }
                     ].map(({ label, key }) => (
                       <div key={key} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span style={{ width: 120, color: "#666", fontSize: 13 }}>{label}:</span>
+                        <span style={{ width: 140, color: "#666", fontSize: 16 }}>{label}:</span>
                         <select
                           value={colMapping[key] || ""}
                           onChange={(e) => setColMapping(prev => ({ ...prev, [key]: e.target.value || null }))}
                           style={{
                             flex: 1, background: "#fff", color: "#333",
                             border: `1px solid ${SE_GREEN}30`, borderRadius: 5,
-                            padding: "5px 8px", fontSize: 13
+                            padding: "8px 10px", fontSize: 16
                           }}
                         >
                           <option value="">Select...</option>
@@ -383,7 +612,7 @@ export default function Dashboard() {
                         marginTop: 6, padding: "9px 22px",
                         background: (colMapping.dateCol && colMapping.amountCol && colMapping.fundCol) ? SE_GREEN : "#ccc",
                         color: "#fff", border: "none", borderRadius: 6,
-                        fontSize: 13, fontWeight: 700, cursor: "pointer"
+                        fontSize: 16, fontWeight: 700, cursor: "pointer"
                       }}
                     >
                       Load Data
@@ -399,8 +628,6 @@ export default function Dashboard() {
   }
 
   // ─── DASHBOARD ───
-  const activeFunds = [...selectedFunds].sort();
-
   return (
     <div style={{
       minHeight: "100vh",
@@ -426,27 +653,34 @@ export default function Dashboard() {
           </div>
           <div>
             <h1 style={{
-              fontSize: 18, fontWeight: 700, color: SE_GREEN_DARK,
+              fontSize: 22, fontWeight: 700, color: SE_GREEN_DARK,
               margin: 0, fontFamily: serif, lineHeight: 1.2
             }}>
               St. Edward Fund Dashboard
             </h1>
-            <p style={{ margin: 0, fontSize: 12, color: "#888" }}>
+            <p style={{ margin: 0, fontSize: 16, color: "#888" }}>
               {fileName} &middot; {rawGifts.length.toLocaleString()} gifts &middot; {funds.length} funds &middot; FY starts July 1
             </p>
           </div>
         </div>
-        <button
-          onClick={() => { setLoaded(false); setRawGifts([]); setFunds([]); setFileName(null); setError(null); }}
-          style={{
-            padding: "7px 16px", background: "#fff",
-            border: `1px solid ${SE_GREEN}30`, borderRadius: 6,
-            color: SE_GREEN_DARK, fontSize: 12, fontWeight: 600,
-            cursor: "pointer"
-          }}
-        >
-          Load New File
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {authUser && (
+            <span style={{ fontSize: 16, color: "#888" }}>
+              {authUser.name} &middot; <a href="/auth/logout" style={{ color: SE_GREEN, textDecoration: "none", fontWeight: 600 }}>Sign out</a>
+            </span>
+          )}
+          <button
+            onClick={() => { setLoaded(false); setRawGifts([]); setFunds([]); setFileName(null); setError(null); }}
+            style={{
+              padding: "7px 16px", background: "#fff",
+              border: `1px solid ${SE_GREEN}30`, borderRadius: 6,
+              color: SE_GREEN_DARK, fontSize: 16, fontWeight: 600,
+              cursor: "pointer"
+            }}
+          >
+            Load New File
+          </button>
+        </div>
       </div>
 
       {/* Time + chart controls */}
@@ -456,17 +690,18 @@ export default function Dashboard() {
           { key: "ytd", label: "YTD" },
           { key: "last12", label: "Last 12 Mo" },
           { key: "last24", label: "Last 24 Mo" },
-          { key: "all", label: "All Time" }
+          { key: "all", label: "All (Since Jan '25)" },
+          { key: "yoy", label: "YoY Compare" }
         ].map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setTimeRange(key)}
             style={{
-              padding: "7px 16px", borderRadius: 6,
+              padding: "9px 18px", borderRadius: 6,
               border: timeRange === key ? `2px solid ${SE_GREEN}` : "1px solid #ccc",
               background: timeRange === key ? `${SE_GREEN}12` : "#fff",
               color: timeRange === key ? SE_GREEN_DARK : "#777",
-              fontSize: 12.5, fontWeight: timeRange === key ? 700 : 500,
+              fontSize: 16, fontWeight: timeRange === key ? 700 : 500,
               cursor: "pointer", transition: "all 0.15s"
             }}
           >
@@ -479,11 +714,11 @@ export default function Dashboard() {
             key={t}
             onClick={() => setChartType(t)}
             style={{
-              padding: "7px 14px", borderRadius: 6,
+              padding: "9px 18px", borderRadius: 6,
               border: chartType === t ? `2px solid ${SE_GOLD}` : "1px solid #ccc",
               background: chartType === t ? `${SE_GOLD}15` : "#fff",
               color: chartType === t ? "#8B6914" : "#999",
-              fontSize: 12.5, fontWeight: chartType === t ? 700 : 500,
+              fontSize: 16, fontWeight: chartType === t ? 700 : 500,
               cursor: "pointer"
             }}
           >
@@ -493,7 +728,7 @@ export default function Dashboard() {
       </div>
 
       {/* Totals */}
-      {activeFunds.length > 0 && (
+      {activeFunds.length > 0 && timeRange !== "yoy" && (
         <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
           {activeFunds.map(f => (
             <div key={f} style={{
@@ -503,9 +738,28 @@ export default function Dashboard() {
               borderRadius: 6, minWidth: 150,
               boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
             }}>
-              <div style={{ fontSize: 11, color: "#888", marginBottom: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{f}</div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif }}>
+              <div style={{ fontSize: 16, color: "#888", marginBottom: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{f}</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif }}>
                 {fmtFull(totals[f] || 0)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {/* YoY Totals */}
+      {activeFunds.length > 0 && timeRange === "yoy" && (
+        <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
+          {yoySeriesKeys.map(key => (
+            <div key={key} style={{
+              padding: "10px 18px", background: "#fff",
+              border: `1px solid ${yoyColorMap[key] || SE_GREEN}25`,
+              borderLeft: `4px solid ${yoyColorMap[key] || SE_GREEN}`,
+              borderRadius: 6, minWidth: 150,
+              boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
+            }}>
+              <div style={{ fontSize: 16, color: "#888", marginBottom: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{key}</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif }}>
+                {fmtFull(yoyTotals[key] || 0)}
               </div>
             </div>
           ))}
@@ -518,36 +772,104 @@ export default function Dashboard() {
         borderRadius: 8, padding: "18px 14px 10px",
         marginBottom: 18, boxShadow: "0 1px 4px rgba(0,89,33,0.04)"
       }}>
-        {filteredData.length === 0 || activeFunds.length === 0 ? (
-          <div style={{ textAlign: "center", padding: 60, color: "#aaa", fontSize: 14 }}>
-            {activeFunds.length === 0 ? "Select at least one fund below." : "No data for the selected range."}
-          </div>
+        {timeRange === "yoy" ? (
+          /* ─── YoY Chart ─── */
+          yoyData.length === 0 || activeFunds.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 60, color: "#aaa", fontSize: 16 }}>
+              {activeFunds.length === 0 ? "Select at least one fund below." : "No data for YoY comparison."}
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={370}>
+              {chartType === "line" ? (
+                <LineChart data={yoyData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}10`} />
+                  <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <YAxis tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
+                  {yoySeriesKeys.map(key => (
+                    <Line
+                      key={key}
+                      type="monotone"
+                      dataKey={key}
+                      stroke={yoyColorMap[key]}
+                      strokeWidth={key.includes("24-25") ? 2 : 2.5}
+                      strokeDasharray={key.includes("24-25") ? "6 3" : undefined}
+                      dot={{ r: 3, fill: yoyColorMap[key] }}
+                      activeDot={{ r: 5 }}
+                    >
+                      <LabelList content={<DataLabel />} />
+                    </Line>
+                  ))}
+                </LineChart>
+              ) : (
+                <BarChart data={yoyData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}10`} />
+                  <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <YAxis tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
+                  {yoySeriesKeys.map(key => (
+                    <Bar key={key} dataKey={key} fill={yoyColorMap[key]} radius={[3, 3, 0, 0]} opacity={key.includes("24-25") ? 0.5 : 0.88}>
+                      <LabelList content={<DataLabel />} />
+                    </Bar>
+                  ))}
+                </BarChart>
+              )}
+            </ResponsiveContainer>
+          )
         ) : (
-          <ResponsiveContainer width="100%" height={370}>
-            {chartType === "line" ? (
-              <LineChart data={filteredData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}10`} />
-                <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 11, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
-                <YAxis tickFormatter={fmt} tick={{ fill: "#888", fontSize: 11, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12, fontFamily: sans }} />
-                {activeFunds.map(f => (
-                  <Line key={f} type="monotone" dataKey={f} stroke={fundColorMap[f]} strokeWidth={2.5} dot={{ r: 3, fill: fundColorMap[f] }} activeDot={{ r: 5 }} />
-                ))}
-              </LineChart>
-            ) : (
-              <BarChart data={filteredData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}10`} />
-                <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 11, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
-                <YAxis tickFormatter={fmt} tick={{ fill: "#888", fontSize: 11, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12, fontFamily: sans }} />
-                {activeFunds.map(f => (
-                  <Bar key={f} dataKey={f} fill={fundColorMap[f]} radius={[3, 3, 0, 0]} opacity={0.88} />
-                ))}
-              </BarChart>
-            )}
-          </ResponsiveContainer>
+          /* ─── Standard Chart ─── */
+          chartData.length === 0 || activeFunds.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 60, color: "#aaa", fontSize: 16 }}>
+              {activeFunds.length === 0 ? "Select at least one fund below." : "No data for the selected range."}
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={370}>
+              {chartType === "line" ? (
+                <LineChart data={chartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}10`} />
+                  <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
+                  <YAxis tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
+                  {activeFunds.map(f => (
+                    <Line key={f} type="monotone" dataKey={f} stroke={fundColorMap[f]} strokeWidth={2.5} dot={{ r: 3, fill: fundColorMap[f] }} activeDot={{ r: 5 }}>
+                      <LabelList content={<DataLabel />} />
+                    </Line>
+                  ))}
+                  {/* Trend lines */}
+                  {activeFunds.map(f => (
+                    <Line
+                      key={`${f}_trend`}
+                      type="linear"
+                      dataKey={`${f}_trend`}
+                      stroke={fundColorMap[f]}
+                      strokeWidth={1.5}
+                      strokeDasharray="8 4"
+                      dot={false}
+                      activeDot={false}
+                      legendType="none"
+                      opacity={0.5}
+                    />
+                  ))}
+                </LineChart>
+              ) : (
+                <BarChart data={chartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}10`} />
+                  <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
+                  <YAxis tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
+                  {activeFunds.map(f => (
+                    <Bar key={f} dataKey={f} fill={fundColorMap[f]} radius={[3, 3, 0, 0]} opacity={0.88}>
+                      <LabelList content={<DataLabel />} />
+                    </Bar>
+                  ))}
+                </BarChart>
+              )}
+            </ResponsiveContainer>
+          )
         )}
       </div>
 
@@ -558,11 +880,11 @@ export default function Dashboard() {
         boxShadow: "0 1px 4px rgba(0,89,33,0.04)"
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif }}>Funds</span>
+          <span style={{ fontSize: 18, fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif }}>Funds</span>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={selectAll} style={{ background: "none", border: "none", color: SE_GREEN, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>All</button>
+            <button onClick={selectAll} style={{ background: "none", border: "none", color: SE_GREEN, fontSize: 16, cursor: "pointer", fontWeight: 600 }}>All</button>
             <span style={{ color: "#ccc" }}>|</span>
-            <button onClick={selectNone} style={{ background: "none", border: "none", color: SE_GREEN, fontSize: 12, cursor: "pointer", fontWeight: 600 }}>None</button>
+            <button onClick={selectNone} style={{ background: "none", border: "none", color: SE_GREEN, fontSize: 16, cursor: "pointer", fontWeight: 600 }}>None</button>
           </div>
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
@@ -579,7 +901,7 @@ export default function Dashboard() {
                   border: active ? `2px solid ${color}` : "1px solid #ddd",
                   background: active ? `${color}10` : "#fafafa",
                   color: active ? SE_GREEN_DARK : "#999",
-                  fontSize: 12.5, fontWeight: active ? 600 : 400,
+                  fontSize: 16, fontWeight: active ? 600 : 400,
                   cursor: "pointer", transition: "all 0.15s"
                 }}
               >
@@ -595,8 +917,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div style={{ marginTop: 16, fontSize: 11, color: "#aaa", textAlign: "center" }}>
-        Gifts aggregated by calendar month per fund. Fiscal year begins July 1.
+      <div style={{ marginTop: 16, fontSize: 16, color: "#aaa", textAlign: "center" }}>
+        Gifts aggregated by calendar month per fund. Fiscal year begins July 1. Dashed lines show trend.
       </div>
     </div>
   );
