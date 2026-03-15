@@ -80,23 +80,29 @@ function parseAmount(val) {
 
 function detectColumns(headers) {
   const lower = headers.map(h => h.toLowerCase().trim());
-  let dateCol = null, amountCol = null, fundCol = null;
   const datePatterns = ["gift date", "gift_date", "giftdate", "date", "deposit date", "deposit_date"];
   const amountPatterns = ["gift amount", "gift_amount", "giftamount", "amount", "gift amt", "total"];
   const fundPatterns = ["fund", "fund name", "fund_name"];
-  for (const p of datePatterns) {
-    const idx = lower.findIndex(h => h === p || h.includes(p));
-    if (idx !== -1) { dateCol = headers[idx]; break; }
+
+  // Prefer exact match first, then fall back to includes.
+  // This avoids e.g. "Parent gift amount" matching before "Gift amount".
+  function findCol(patterns) {
+    for (const p of patterns) {
+      const idx = lower.findIndex(h => h === p);
+      if (idx !== -1) return headers[idx];
+    }
+    for (const p of patterns) {
+      const idx = lower.findIndex(h => h.includes(p) && !h.includes("parent"));
+      if (idx !== -1) return headers[idx];
+    }
+    return null;
   }
-  for (const p of amountPatterns) {
-    const idx = lower.findIndex(h => h === p || h.includes(p));
-    if (idx !== -1) { amountCol = headers[idx]; break; }
-  }
-  for (const p of fundPatterns) {
-    const idx = lower.findIndex(h => h === p || h.includes(p));
-    if (idx !== -1) { fundCol = headers[idx]; break; }
-  }
-  return { dateCol, amountCol, fundCol };
+
+  return {
+    dateCol: findCol(datePatterns),
+    amountCol: findCol(amountPatterns),
+    fundCol: findCol(fundPatterns)
+  };
 }
 
 function getMonthKey(date) {
@@ -162,7 +168,7 @@ export default function Dashboard() {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(null);
   const [fileName, setFileName] = useState(null);
-  const [fetching, setFetching] = useState(false);
+  const [fetching, setFetching] = useState(null); // null | "offertory" | "allFunds"
   const [authUser, setAuthUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [fyRevenue, setFyRevenue] = useState("");
@@ -207,7 +213,7 @@ export default function Dashboard() {
 
   const fetchFromLGL = useCallback(async (offertoryOnly = false) => {
     setError(null);
-    setFetching(true);
+    setFetching(offertoryOnly ? "offertory" : "allFunds");
     try {
       const endpoint = offertoryOnly ? LGL_OFFERTORY_ENDPOINT : LGL_ALL_FUNDS_ENDPOINT;
       const resp = await fetch(endpoint);
@@ -220,7 +226,7 @@ export default function Dashboard() {
     } catch (err) {
       setError(`Could not fetch from LGL: ${err.message}`);
     } finally {
-      setFetching(false);
+      setFetching(null);
     }
   }, [loadRows]);
 
@@ -465,10 +471,10 @@ export default function Dashboard() {
           {/* Option 1: Offertory auto-pull */}
           <button
             onClick={() => fetchFromLGL(true)}
-            disabled={fetching}
+            disabled={!!fetching}
             style={{
               width: "100%", padding: "16px 24px",
-              background: fetching ? "#ccc" : SE_GREEN,
+              background: fetching === "offertory" ? "#ccc" : SE_GREEN,
               color: "#fff", border: "none", borderRadius: 10,
               fontSize: 18, fontWeight: 700, cursor: fetching ? "wait" : "pointer",
               fontFamily: serif, marginBottom: 10,
@@ -476,7 +482,7 @@ export default function Dashboard() {
               transition: "all 0.2s"
             }}
           >
-            {fetching ? "Fetching from LGL..." : "Load Offertory Data"}
+            {fetching === "offertory" ? "Fetching from LGL..." : "Load Offertory Data"}
           </button>
           <p style={{ fontSize: 16, color: "#999", marginTop: 0, marginBottom: 18 }}>
             Pulls the latest Offertory giving data directly from LGL. Reports are automatically refreshed once every weekday.
@@ -485,18 +491,18 @@ export default function Dashboard() {
           {/* Option 2: All funds */}
           <button
             onClick={() => fetchFromLGL(false)}
-            disabled={fetching}
+            disabled={!!fetching}
             style={{
               width: "100%", padding: "14px 24px",
-              background: "#fff",
-              color: SE_GREEN_DARK, border: `2px solid ${SE_GREEN}`,
+              background: fetching === "allFunds" ? "#eee" : "#fff",
+              color: SE_GREEN_DARK, border: `2px solid ${fetching === "allFunds" ? "#ccc" : SE_GREEN}`,
               borderRadius: 10,
               fontSize: 18, fontWeight: 700, cursor: fetching ? "wait" : "pointer",
               fontFamily: serif, marginBottom: 10,
               transition: "all 0.2s"
             }}
           >
-            Load All Funds Report
+            {fetching === "allFunds" ? "Fetching from LGL..." : "Load All Funds Report"}
           </button>
           <p style={{ fontSize: 16, color: "#999", marginTop: 0, marginBottom: 20 }}>
             Pulls all fund data from LGL (Offertory, Capital Campaign, etc.)
