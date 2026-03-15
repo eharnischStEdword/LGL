@@ -206,14 +206,20 @@ app.get("/api/lgl-data", requireAuth, async (req, res) => {
   }
 });
 
+// ─── Auth gate: redirect unauthenticated users to login ───
+if (AUTH_ENABLED) {
+  app.use((req, res, next) => {
+    // Allow auth routes, and static assets (js, css, svg, etc.)
+    if (req.path.startsWith("/auth") || req.path.startsWith("/api")) return next();
+    if (/\.(js|css|svg|png|ico|woff2?|ttf|map)$/.test(req.path)) return next();
+    if (!req.session.user) return res.redirect("/auth/login");
+    next();
+  });
+}
+
 // ─── Static files & SPA ───
 app.use(express.static(join(__dirname, "dist")));
 app.get("*", (req, res) => {
-  // If auth is enabled and user is not logged in, redirect to login
-  // (except for static assets which are handled above)
-  if (AUTH_ENABLED && !req.session.user && !req.path.startsWith("/auth")) {
-    return res.redirect("/auth/login");
-  }
   res.sendFile(join(__dirname, "dist", "index.html"));
 });
 
