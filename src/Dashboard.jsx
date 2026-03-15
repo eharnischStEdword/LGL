@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, BarChart, Bar, LabelList
@@ -113,6 +113,7 @@ function getFYLabel() {
 }
 
 // Linear regression trend line computation
+// Returns { data, pct } where pct is the % change from first to last trend value
 function computeTrend(data, key) {
   const points = data.map((d, i) => ({ x: i, y: d[key] || 0 }));
   const n = points.length;
@@ -123,7 +124,11 @@ function computeTrend(data, key) {
   }
   const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
   const intercept = (sumY - slope * sumX) / n;
-  return data.map((d, i) => ({ ...d, [`${key}_trend`]: Math.max(0, intercept + slope * i) }));
+  const first = Math.max(0, intercept);
+  const last = Math.max(0, intercept + slope * (n - 1));
+  const pct = first > 0 ? ((last - first) / first) * 100 : 0;
+  const trendData = data.map((d, i) => ({ ...d, [`${key}_trend`]: Math.max(0, intercept + slope * i) }));
+  return { data: trendData, pct };
 }
 
 // Custom label for data points
@@ -146,15 +151,15 @@ export default function Dashboard() {
   const [timeRange, setTimeRange] = useState("last12");
   const [chartType, setChartType] = useState("line");
   const [colMapping, setColMapping] = useState({ dateCol: null, amountCol: null, fundCol: null });
-  const [headers, setHeaders] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(null);
   const [fileName, setFileName] = useState(null);
-  const [dragOver, setDragOver] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [authUser, setAuthUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
-  const fileRef = useRef(null);
+  const [fyRevenue, setFyRevenue] = useState("");
+  const [fyExpenses, setFyExpenses] = useState("");
+  const [fyCalced, setFyCalced] = useState(false);
 
   // Check authentication status on mount
   useEffect(() => {
@@ -175,13 +180,12 @@ export default function Dashboard() {
       return;
     }
     const hdrs = Object.keys(rows[0]);
-    setHeaders(hdrs);
     setFileName(sourceName);
     const detected = detectColumns(hdrs);
     if (!detected.dateCol || !detected.amountCol || !detected.fundCol) {
       setColMapping(detected);
       setError(
-        `Could not auto-detect all columns. Found: Date="${detected.dateCol || "?"}", Amount="${detected.amountCol || "?"}", Fund="${detected.fundCol || "?"}". Use the dropdowns below to map them.`
+        `Could not auto-detect all columns. Found: Date="${detected.dateCol || "?"}", Amount="${detected.amountCol || "?"}", Fund="${detected.fundCol || "?"}". Available columns: ${hdrs.join(", ")}`
       );
       setRawGifts(rows);
       setLoaded(false);
@@ -191,30 +195,6 @@ export default function Dashboard() {
     processData(rows, detected);
   }, []);
 
-  const handleFile = useCallback((file) => {
-    setError(null);
-    setFileName(file.name);
-    const isXlsx = file.name.match(/\.xlsx?$/i);
-    if (isXlsx) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const rows = parseXlsx(e.target.result);
-          loadRows(rows, file.name);
-        } catch (err) {
-          setError(`Excel parse error: ${err.message}`);
-        }
-      };
-      reader.readAsArrayBuffer(file);
-    } else {
-      Papa.parse(file, {
-        header: true,
-        skipEmptyLines: true,
-        complete: (results) => loadRows(results.data, file.name),
-        error: (err) => setError(`Parse error: ${err.message}`)
-      });
-    }
-  }, [loadRows]);
 
   const fetchFromLGL = useCallback(async (offertoryOnly = false) => {
     setError(null);
@@ -264,11 +244,6 @@ export default function Dashboard() {
     setError(null);
   }, []);
 
-  const applyMapping = useCallback(() => {
-    if (colMapping.dateCol && colMapping.amountCol && colMapping.fundCol) {
-      processData(rawGifts, colMapping);
-    }
-  }, [colMapping, rawGifts, processData]);
 
   const filteredData = useMemo(() => {
     if (!loaded || rawGifts.length === 0 || timeRange === "yoy" || timeRange === "fyoy") return [];
@@ -303,15 +278,19 @@ export default function Dashboard() {
     });
   }, [rawGifts, selectedFunds, timeRange, loaded]);
 
-  // Add trend data to filteredData
-  const chartData = useMemo(() => {
-    if (filteredData.length < 2) return filteredData;
+  // Add trend data to filteredData + compute trend %
+  const { chartData, trendPcts } = useMemo(() => {
+    if (filteredData.length < 2) return { chartData: filteredData, trendPcts: {} };
     let result = filteredData;
+    const pcts = {};
     for (const f of selectedFunds) {
-      const withTrend = computeTrend(result, f);
-      if (withTrend) result = withTrend;
+      const trend = computeTrend(result, f);
+      if (trend) {
+        result = trend.data;
+        pcts[f] = trend.pct;
+      }
     }
-    return result;
+    return { chartData: result, trendPcts: pcts };
   }, [filteredData, selectedFunds]);
 
   const totals = useMemo(() => {
@@ -385,6 +364,7 @@ export default function Dashboard() {
     });
   };
 
+  const goHome = () => { setLoaded(false); setRawGifts([]); setFunds([]); setFileName(null); setError(null); setFyRevenue(""); setFyExpenses(""); setFyCalced(false); };
   const selectAll = () => setSelectedFunds(new Set(funds));
   const selectNone = () => setSelectedFunds(new Set());
   const fmt = (v) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v.toFixed(0)}`;
@@ -552,10 +532,15 @@ export default function Dashboard() {
             &#10013;
           </div>
           <div>
-            <h1 style={{
-              fontSize: 22, fontWeight: 700, color: SE_GREEN_DARK,
-              margin: 0, fontFamily: serif, lineHeight: 1.2
-            }}>
+            <h1
+              onClick={goHome}
+              style={{
+                fontSize: 22, fontWeight: 700, color: SE_GREEN_DARK,
+                margin: 0, fontFamily: serif, lineHeight: 1.2,
+                cursor: "pointer"
+              }}
+              title="Back to start"
+            >
               St. Edward Fund Dashboard
             </h1>
             <p style={{ margin: 0, fontSize: 16, color: "#888" }}>
@@ -570,7 +555,7 @@ export default function Dashboard() {
             </span>
           )}
           <button
-            onClick={() => { setLoaded(false); setRawGifts([]); setFunds([]); setFileName(null); setError(null); }}
+            onClick={goHome}
             style={{
               padding: "7px 16px", background: "#fff",
               border: `1px solid ${SE_GREEN}30`, borderRadius: 6,
@@ -578,7 +563,7 @@ export default function Dashboard() {
               cursor: "pointer"
             }}
           >
-            Load New File
+            Start Again
           </button>
         </div>
       </div>
@@ -774,6 +759,46 @@ export default function Dashboard() {
         )}
       </div>
 
+      {/* Trend indicator */}
+      {timeRange !== "yoy" && timeRange !== "fyoy" && Object.keys(trendPcts).length > 0 && (
+        <div style={{
+          display: "flex", gap: 12, marginBottom: 14, flexWrap: "wrap"
+        }}>
+          {activeFunds.map(f => {
+            const pct = trendPcts[f];
+            if (pct == null) return null;
+            const up = pct >= 0;
+            const color = up ? SE_GREEN : "#c0392b";
+            const arrow = up ? "▲" : "▼";
+            const rangeLabel = {
+              last12: "over last 12 months",
+              last24: "over last 24 months",
+              ytd: "year to date",
+              fy: "this fiscal year",
+              all: "since Jan 2025"
+            }[timeRange] || "in this view";
+            return (
+              <div key={f} style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "6px 14px", background: `${color}08`,
+                border: `1px solid ${color}20`, borderRadius: 6,
+                fontSize: 16, fontFamily: sans
+              }}>
+                <span style={{
+                  width: 10, height: 10, borderRadius: 3,
+                  background: fundColorMap[f]
+                }} />
+                <span style={{ color: "#666" }}>{f}:</span>
+                <span style={{ fontWeight: 700, color, fontSize: 18 }}>
+                  {arrow} {Math.abs(pct).toFixed(1)}%
+                </span>
+                <span style={{ color: "#999", fontSize: 16 }}>{rangeLabel}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Fund selector */}
       <div style={{
         background: "#fff", border: `1px solid ${SE_GREEN}12`,
@@ -911,6 +936,7 @@ export default function Dashboard() {
             {/* Comparisons */}
             <div style={{
               background: `${SE_GOLD}10`, borderRadius: 6, padding: "12px 16px",
+              marginBottom: 12
             }}>
               <div style={{
                 fontSize: 16, fontWeight: 700, color: "#8B6914",
@@ -946,6 +972,94 @@ export default function Dashboard() {
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Fiscal Year to Date — manual entry */}
+            <div style={{
+              background: `${SE_BLUE}08`, borderRadius: 6, padding: "12px 16px",
+            }}>
+              <div style={{
+                fontSize: 16, fontWeight: 700, color: SE_BLUE,
+                textTransform: "uppercase", letterSpacing: "0.06em",
+                marginBottom: 10, fontFamily: sans
+              }}>
+                Fiscal Year to Date
+              </div>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <label style={{ fontSize: 16, color: "#666", display: "block", marginBottom: 4 }}>Total Revenue</label>
+                  <input
+                    type="text"
+                    value={fyRevenue}
+                    onChange={(e) => { setFyRevenue(e.target.value); setFyCalced(false); }}
+                    placeholder="e.g. 302793"
+                    style={{
+                      width: "100%", padding: "8px 12px", fontSize: 16,
+                      border: `1px solid ${SE_BLUE}30`, borderRadius: 6,
+                      fontFamily: sans, boxSizing: "border-box"
+                    }}
+                  />
+                </div>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <label style={{ fontSize: 16, color: "#666", display: "block", marginBottom: 4 }}>Total Expenses</label>
+                  <input
+                    type="text"
+                    value={fyExpenses}
+                    onChange={(e) => { setFyExpenses(e.target.value); setFyCalced(false); }}
+                    placeholder="e.g. 480576"
+                    style={{
+                      width: "100%", padding: "8px 12px", fontSize: 16,
+                      border: `1px solid ${SE_BLUE}30`, borderRadius: 6,
+                      fontFamily: sans, boxSizing: "border-box"
+                    }}
+                  />
+                </div>
+                <div style={{ display: "flex", alignItems: "flex-end" }}>
+                  <button
+                    onClick={() => setFyCalced(true)}
+                    disabled={!fyRevenue || !fyExpenses}
+                    style={{
+                      padding: "8px 20px", fontSize: 16, fontWeight: 700,
+                      background: (fyRevenue && fyExpenses) ? SE_BLUE : "#ccc",
+                      color: "#fff", border: "none", borderRadius: 6,
+                      cursor: (fyRevenue && fyExpenses) ? "pointer" : "default",
+                      fontFamily: sans
+                    }}
+                  >
+                    Calculate
+                  </button>
+                </div>
+              </div>
+              {fyCalced && (() => {
+                const rev = parseAmount(fyRevenue);
+                const exp = parseAmount(fyExpenses);
+                const net = rev - exp;
+                const netColor = net >= 0 ? SE_GREEN : "#c0392b";
+                return (
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 16, fontFamily: sans }}>
+                    <tbody>
+                      <tr>
+                        <td style={{ padding: "6px 0", color: "#444" }}>Total Revenue</td>
+                        <td style={{ padding: "6px 0", textAlign: "right", fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif, fontSize: 18 }}>
+                          {fmtFull(rev)}
+                        </td>
+                      </tr>
+                      <tr style={{ borderTop: "1px solid #eee" }}>
+                        <td style={{ padding: "6px 0", color: "#444" }}>Total Expenses</td>
+                        <td style={{ padding: "6px 0", textAlign: "right", fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif, fontSize: 18 }}>
+                          {fmtFull(exp)}
+                        </td>
+                      </tr>
+                      <tr style={{ borderTop: `2px solid ${SE_BLUE}30` }}>
+                        <td style={{ padding: "8px 0", color: "#222", fontWeight: 700, fontSize: 17 }}>Net Income</td>
+                        <td style={{ padding: "8px 0", textAlign: "right", fontWeight: 700, color: netColor, fontFamily: serif, fontSize: 20 }}>
+                          {net < 0 ? `(${fmtFull(Math.abs(net))})` : fmtFull(net)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                );
+              })()}
             </div>
           </div>
         );
