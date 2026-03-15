@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3000;
 const CLIENT_ID = process.env.CLIENT_ID || "0c53ab68-8e2c-4fc4-920c-bdd4d0db6663";
 const TENANT_ID = process.env.TENANT_ID || "8ccf96b2-b7eb-470b-a715-ec1696d83ebd";
 const CLIENT_SECRET = process.env.CLIENT_SECRET || "";
-const REDIRECT_URI = process.env.REDIRECT_URI || "https://lgl-dashboard.onrender.com/auth/callback";
+const REDIRECT_URI = process.env.REDIRECT_URI || "https://lgl.onrender.com/auth/callback";
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
 
 const ALLOWED_USERS = (process.env.ALLOWED_DASHBOARD_USERS || [
@@ -219,7 +219,7 @@ if (AUTH_ENABLED) {
 
 // ─── Static files & SPA ───
 app.use(express.static(join(__dirname, "dist")));
-app.get("*", (req, res) => {
+app.get("/{*splat}", (req, res) => {
   res.sendFile(join(__dirname, "dist", "index.html"));
 });
 
