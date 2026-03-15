@@ -23,9 +23,9 @@ const SE_BLUE = "#003764";
 const SE_OFFWHITE = "#EEF4F1";
 
 const FUND_COLORS = [
-  SE_GREEN, SE_GOLD, SE_BLUE, "#2e8b57", "#b8860b",
-  "#3a7a5c", "#8B6914", "#00843D", "#c49000", "#005921",
-  "#d4a72c", "#1a6b3c", "#a67c00", "#22763e", "#e6b422"
+  SE_GREEN, SE_BLUE, "#2e8b57", "#3a7a5c", "#005921",
+  "#1a6b3c", "#22763e", SE_GOLD, "#006644", "#2d7d4f",
+  "#357a38", "#4a9e6e", "#1b5e20", "#4e7a4e", "#5c8a5e"
 ];
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -394,18 +394,21 @@ export default function Dashboard() {
     return (
       <div style={{
         background: SE_GREEN_DARK,
-        border: `1px solid ${SE_GOLD}44`,
+        border: `1px solid rgba(255,255,255,0.15)`,
         borderRadius: 6,
         padding: "12px 16px",
         fontSize: 16,
-        color: SE_OFFWHITE,
+        color: "#fff",
         fontFamily: sans,
         boxShadow: "0 8px 24px rgba(0,0,0,0.5)"
       }}>
         <div style={{ fontWeight: 700, marginBottom: 6, color: "#fff", fontFamily: serif }}>{label}</div>
         {real.map((p, i) => (
-          <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 24, marginBottom: 3 }}>
-            <span style={{ color: p.color }}>{p.dataKey}</span>
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 24, marginBottom: 3, alignItems: "center" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 6, color: "#fff" }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: p.color, flexShrink: 0 }} />
+              {p.dataKey}
+            </span>
             <span style={{ fontWeight: 700, color: "#fff" }}>{fmtFull(p.value)}</span>
           </div>
         ))}
@@ -445,7 +448,7 @@ export default function Dashboard() {
             width: 56, height: 56, borderRadius: "50%",
             background: SE_GREEN, display: "flex", alignItems: "center",
             justifyContent: "center", margin: "0 auto 16px",
-            color: SE_GOLD, fontSize: 26, fontFamily: serif, fontWeight: 700
+            color: "#fff", fontSize: 26, fontFamily: serif, fontWeight: 700
           }}>
             &#10013;
           </div>
@@ -457,7 +460,7 @@ export default function Dashboard() {
             St. Edward Church
           </h1>
           <p style={{
-            color: SE_GOLD, fontSize: 16, marginBottom: 4,
+            color: SE_GREEN, fontSize: 16, marginBottom: 4,
             letterSpacing: "0.12em", textTransform: "uppercase",
             fontWeight: 700, fontFamily: sans
           }}>
@@ -465,7 +468,7 @@ export default function Dashboard() {
           </p>
           <div style={{
             width: 50, height: 2, margin: "0 auto 28px",
-            background: `linear-gradient(90deg, ${SE_GREEN}, ${SE_GOLD})`
+            background: `linear-gradient(90deg, ${SE_GREEN}, ${SE_GREEN_DARK})`
           }} />
 
           {/* Option 1: Offertory auto-pull */}
@@ -512,8 +515,8 @@ export default function Dashboard() {
           {error && (
             <div style={{
               marginTop: 10, padding: "14px 18px",
-              background: "#fff8f0", border: "1px solid #e8c87040",
-              borderRadius: 8, fontSize: 16, color: "#8B6914",
+              background: "#fef2f2", border: "1px solid #c0392b30",
+              borderRadius: 8, fontSize: 16, color: "#c0392b",
               textAlign: "left", lineHeight: 1.5
             }}>
               {error}
@@ -543,7 +546,7 @@ export default function Dashboard() {
           <div style={{
             width: 36, height: 36, borderRadius: "50%",
             background: SE_GREEN, display: "flex", alignItems: "center",
-            justifyContent: "center", color: SE_GOLD,
+            justifyContent: "center", color: "#fff",
             fontSize: 17, fontFamily: serif, fontWeight: 700, flexShrink: 0
           }}>
             &#10013;
@@ -621,9 +624,9 @@ export default function Dashboard() {
             onClick={() => setChartType(t)}
             style={{
               padding: "9px 18px", borderRadius: 6,
-              border: chartType === t ? `2px solid ${SE_GOLD}` : "1px solid #ccc",
-              background: chartType === t ? `${SE_GOLD}15` : "#fff",
-              color: chartType === t ? "#8B6914" : "#999",
+              border: chartType === t ? `2px solid ${SE_GREEN}` : "1px solid #ccc",
+              background: chartType === t ? `${SE_GREEN}12` : "#fff",
+              color: chartType === t ? SE_GREEN_DARK : "#999",
               fontSize: 16, fontWeight: chartType === t ? 700 : 500,
               cursor: "pointer"
             }}
@@ -955,11 +958,11 @@ export default function Dashboard() {
 
             {/* Comparisons */}
             <div style={{
-              background: `${SE_GOLD}10`, borderRadius: 6, padding: "12px 16px",
+              background: `${SE_GREEN}08`, borderRadius: 6, padding: "12px 16px",
               marginBottom: 12
             }}>
               <div style={{
-                fontSize: 16, fontWeight: 700, color: "#8B6914",
+                fontSize: 16, fontWeight: 700, color: SE_GREEN_DARK,
                 textTransform: "uppercase", letterSpacing: "0.06em",
                 marginBottom: 10, fontFamily: sans
               }}>
@@ -996,10 +999,10 @@ export default function Dashboard() {
 
             {/* Fiscal Year to Date — manual entry */}
             <div style={{
-              background: `${SE_BLUE}08`, borderRadius: 6, padding: "12px 16px",
+              background: `${SE_GREEN}08`, borderRadius: 6, padding: "12px 16px",
             }}>
               <div style={{
-                fontSize: 16, fontWeight: 700, color: SE_BLUE,
+                fontSize: 16, fontWeight: 700, color: SE_GREEN_DARK,
                 textTransform: "uppercase", letterSpacing: "0.06em",
                 marginBottom: 10, fontFamily: sans
               }}>
@@ -1015,7 +1018,7 @@ export default function Dashboard() {
                     placeholder="e.g. 302793"
                     style={{
                       width: "100%", padding: "8px 12px", fontSize: 16,
-                      border: `1px solid ${SE_BLUE}30`, borderRadius: 6,
+                      border: `1px solid ${SE_GREEN}30`, borderRadius: 6,
                       fontFamily: sans, boxSizing: "border-box"
                     }}
                   />
@@ -1029,7 +1032,7 @@ export default function Dashboard() {
                     placeholder="e.g. 480576"
                     style={{
                       width: "100%", padding: "8px 12px", fontSize: 16,
-                      border: `1px solid ${SE_BLUE}30`, borderRadius: 6,
+                      border: `1px solid ${SE_GREEN}30`, borderRadius: 6,
                       fontFamily: sans, boxSizing: "border-box"
                     }}
                   />
@@ -1040,7 +1043,7 @@ export default function Dashboard() {
                     disabled={!fyRevenue || !fyExpenses}
                     style={{
                       padding: "8px 20px", fontSize: 16, fontWeight: 700,
-                      background: (fyRevenue && fyExpenses) ? SE_BLUE : "#ccc",
+                      background: (fyRevenue && fyExpenses) ? SE_GREEN : "#ccc",
                       color: "#fff", border: "none", borderRadius: 6,
                       cursor: (fyRevenue && fyExpenses) ? "pointer" : "default",
                       fontFamily: sans
@@ -1070,7 +1073,7 @@ export default function Dashboard() {
                           {fmtFull(exp)}
                         </td>
                       </tr>
-                      <tr style={{ borderTop: `2px solid ${SE_BLUE}30` }}>
+                      <tr style={{ borderTop: `2px solid ${SE_GREEN}30` }}>
                         <td style={{ padding: "8px 0", color: "#222", fontWeight: 700, fontSize: 17 }}>Net Income</td>
                         <td style={{ padding: "8px 0", textAlign: "right", fontWeight: 700, color: netColor, fontFamily: serif, fontSize: 20 }}>
                           {net < 0 ? `(${fmtFull(Math.abs(net))})` : fmtFull(net)}
