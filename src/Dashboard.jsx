@@ -219,12 +219,18 @@ export default function Dashboard() {
       const resp = await fetch(endpoint);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
       const ct = resp.headers.get("content-type") || "";
-      const lm = resp.headers.get("last-modified");
+      const reportDate = resp.headers.get("x-report-date"); // e.g. "2026-03-15"
       const buf = await resp.arrayBuffer();
       const allRows = parseSpreadsheet(buf, ct);
       const label = offertoryOnly ? "LGL - Offertory (live)" : "LGL - All Funds (live)";
-      // Use LGL's Last-Modified timestamp (when the report was generated), not "right now"
-      setDataLoadedAt(lm ? new Date(lm) : new Date());
+      // Use the date from LGL's filename (when the report was generated)
+      if (reportDate) {
+        // Parse as local date (not UTC) by splitting the parts
+        const [y, m, d] = reportDate.split("-").map(Number);
+        setDataLoadedAt(new Date(y, m - 1, d));
+      } else {
+        setDataLoadedAt(new Date());
+      }
       loadRows(allRows, label);
     } catch (err) {
       setError(`Could not fetch from LGL: ${err.message}`);
@@ -569,10 +575,14 @@ export default function Dashboard() {
             <p style={{ margin: 0, fontSize: 16, color: "#888" }}>
               {fileName} &middot; {rawGifts.length.toLocaleString()} gifts &middot; {funds.length} fund{funds.length !== 1 ? "s" : ""}
               {dataLoadedAt && (() => {
-                const hrs = Math.round((Date.now() - dataLoadedAt.getTime()) / 3600000);
-                const ago = hrs < 1 ? "just now" : hrs === 1 ? "1 hour ago" : `${hrs} hours ago`;
+                const today = new Date();
+                today.setHours(0,0,0,0);
+                const rpt = new Date(dataLoadedAt);
+                rpt.setHours(0,0,0,0);
+                const days = Math.round((today - rpt) / 86400000);
+                const ago = days === 0 ? "today" : days === 1 ? "1 day ago" : `${days} days ago`;
                 return (
-                  <> &middot; Report generated {dataLoadedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} at {dataLoadedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} ({ago})</>
+                  <> &middot; Report from {dataLoadedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} ({ago})</>
                 );
               })()}
             </p>

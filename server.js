@@ -204,9 +204,12 @@ async function proxyLGL(url, res) {
   // Forward the actual content type from LGL (could be xlsx or csv)
   const ct = resp.headers.get("content-type") || "application/octet-stream";
   res.set("Content-Type", ct);
-  // Forward Last-Modified so the frontend knows when LGL generated the report
-  const lm = resp.headers.get("last-modified");
-  if (lm) res.set("Last-Modified", lm);
+  // Extract report date from Content-Disposition filename (e.g. "...Update 2026-03-15.xlsx")
+  const cd = resp.headers.get("content-disposition") || "";
+  const dateMatch = cd.match(/(\d{4}-\d{2}-\d{2})/);
+  if (dateMatch) {
+    res.set("X-Report-Date", dateMatch[1]);
+  }
   res.send(Buffer.from(buf));
 }
 
