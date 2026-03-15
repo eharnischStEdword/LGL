@@ -282,7 +282,7 @@ export default function Dashboard() {
   }, [colMapping, rawGifts, processData]);
 
   const filteredData = useMemo(() => {
-    if (!loaded || rawGifts.length === 0 || timeRange === "yoy") return [];
+    if (!loaded || rawGifts.length === 0 || timeRange === "yoy" || timeRange === "fyoy") return [];
     const now = new Date();
     let startDate;
     if (timeRange === "last12") startDate = new Date(now.getFullYear() - 1, now.getMonth(), 1);
@@ -334,10 +334,17 @@ export default function Dashboard() {
 
   // ─── YoY comparison data ───
   const yoyData = useMemo(() => {
-    if (!loaded || rawGifts.length === 0 || timeRange !== "yoy") return [];
+    if (!loaded || rawGifts.length === 0 || (timeRange !== "yoy" && timeRange !== "fyoy")) return [];
     const now = new Date();
     const fyYears = [2024, 2025];
+
+    // For FY YoY, figure out which fiscal month index we're currently in
+    const currentCalMonth = now.getMonth(); // 0-11
+    const currentFYMonthIdx = (currentCalMonth - FY_START_MONTH + 13) % 12; // 0=Jul, 1=Aug, ..., 11=Jun
+
     const rows = FY_MONTH_LABELS.map((label, fyMonthIdx) => {
+      // For fyoy, only include months up to the current fiscal month
+      if (timeRange === "fyoy" && fyMonthIdx > currentFYMonthIdx) return null;
       const row = { month: label };
       for (const fy of fyYears) {
         const calMonth = (fyMonthIdx + FY_START_MONTH - 1) % 12;
@@ -357,12 +364,12 @@ export default function Dashboard() {
         }
       }
       return row;
-    });
+    }).filter(Boolean);
     return rows;
   }, [rawGifts, selectedFunds, timeRange, loaded]);
 
   const yoySeriesKeys = useMemo(() => {
-    if (timeRange !== "yoy") return [];
+    if (timeRange !== "yoy" && timeRange !== "fyoy") return [];
     const keys = [];
     for (const fund of [...selectedFunds].sort()) {
       keys.push(`${fund} (2024-25)`);
@@ -372,7 +379,7 @@ export default function Dashboard() {
   }, [selectedFunds, timeRange]);
 
   const yoyTotals = useMemo(() => {
-    if (timeRange !== "yoy" || yoyData.length === 0) return {};
+    if ((timeRange !== "yoy" && timeRange !== "fyoy") || yoyData.length === 0) return {};
     const t = {};
     for (const key of yoySeriesKeys) {
       t[key] = yoyData.reduce((sum, row) => sum + (row[key] || 0), 0);
@@ -691,7 +698,8 @@ export default function Dashboard() {
           { key: "last12", label: "Last 12 Mo" },
           { key: "last24", label: "Last 24 Mo" },
           { key: "all", label: "All (Since Jan '25)" },
-          { key: "yoy", label: "YoY Compare" }
+          { key: "yoy", label: "YoY Compare" },
+          { key: "fyoy", label: "FY YoY" }
         ].map(({ key, label }) => (
           <button
             key={key}
@@ -728,7 +736,7 @@ export default function Dashboard() {
       </div>
 
       {/* Totals */}
-      {activeFunds.length > 0 && timeRange !== "yoy" && (
+      {activeFunds.length > 0 && timeRange !== "yoy" && timeRange !== "fyoy" && (
         <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
           {activeFunds.map(f => (
             <div key={f} style={{
@@ -747,7 +755,7 @@ export default function Dashboard() {
         </div>
       )}
       {/* YoY Totals */}
-      {activeFunds.length > 0 && timeRange === "yoy" && (
+      {activeFunds.length > 0 && (timeRange === "yoy" || timeRange === "fyoy") && (
         <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
           {yoySeriesKeys.map(key => (
             <div key={key} style={{
@@ -772,8 +780,8 @@ export default function Dashboard() {
         borderRadius: 8, padding: "18px 14px 10px",
         marginBottom: 18, boxShadow: "0 1px 4px rgba(0,89,33,0.04)"
       }}>
-        {timeRange === "yoy" ? (
-          /* ─── YoY Chart ─── */
+        {(timeRange === "yoy" || timeRange === "fyoy") ? (
+          /* ─── YoY / FY YoY Chart ─── */
           yoyData.length === 0 || activeFunds.length === 0 ? (
             <div style={{ textAlign: "center", padding: 60, color: "#aaa", fontSize: 16 }}>
               {activeFunds.length === 0 ? "Select at least one fund below." : "No data for YoY comparison."}
