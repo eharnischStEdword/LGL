@@ -201,7 +201,9 @@ async function proxyLGL(url, res) {
     return res.status(resp.status).json({ error: `LGL returned ${resp.status}` });
   }
   const buf = await resp.arrayBuffer();
-  res.set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  // Forward the actual content type from LGL (could be xlsx or csv)
+  const ct = resp.headers.get("content-type") || "application/octet-stream";
+  res.set("Content-Type", ct);
   res.send(Buffer.from(buf));
 }
 

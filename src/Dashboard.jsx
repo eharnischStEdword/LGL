@@ -42,7 +42,15 @@ const serif = "'Georgia', 'Cambria', serif";
 // Fiscal month labels in FY order (Jul=0 through Jun=11)
 const FY_MONTH_LABELS = ["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"];
 
-function parseXlsx(arrayBuffer) {
+function parseSpreadsheet(arrayBuffer, contentType) {
+  // If CSV/text, convert buffer to string and parse as CSV via SheetJS
+  if (contentType && (contentType.includes("text/") || contentType.includes("csv"))) {
+    const text = new TextDecoder("utf-8").decode(arrayBuffer);
+    const wb = XLSX.read(text, { type: "string" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(ws, { defval: "" });
+  }
+  // Otherwise treat as xlsx binary
   const wb = XLSX.read(arrayBuffer, { type: "array" });
   const ws = wb.Sheets[wb.SheetNames[0]];
   return XLSX.utils.sheet_to_json(ws, { defval: "" });
@@ -160,6 +168,7 @@ export default function Dashboard() {
   const [fyRevenue, setFyRevenue] = useState("");
   const [fyExpenses, setFyExpenses] = useState("");
   const [fyCalced, setFyCalced] = useState(false);
+  const [dataLoadedAt, setDataLoadedAt] = useState(null);
 
   // Check authentication status on mount
   useEffect(() => {
@@ -203,8 +212,9 @@ export default function Dashboard() {
       const endpoint = offertoryOnly ? LGL_OFFERTORY_ENDPOINT : LGL_ALL_FUNDS_ENDPOINT;
       const resp = await fetch(endpoint);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+      const ct = resp.headers.get("content-type") || "";
       const buf = await resp.arrayBuffer();
-      const allRows = parseXlsx(buf);
+      const allRows = parseSpreadsheet(buf, ct);
       const label = offertoryOnly ? "LGL - Offertory (live)" : "LGL - All Funds (live)";
       loadRows(allRows, label);
     } catch (err) {
@@ -242,6 +252,7 @@ export default function Dashboard() {
     setSelectedFunds(initial);
     setLoaded(true);
     setError(null);
+    setDataLoadedAt(new Date());
   }, []);
 
 
@@ -364,7 +375,7 @@ export default function Dashboard() {
     });
   };
 
-  const goHome = () => { setLoaded(false); setRawGifts([]); setFunds([]); setFileName(null); setError(null); setFyRevenue(""); setFyExpenses(""); setFyCalced(false); };
+  const goHome = () => { setLoaded(false); setRawGifts([]); setFunds([]); setFileName(null); setError(null); setFyRevenue(""); setFyExpenses(""); setFyCalced(false); setDataLoadedAt(null); };
   const selectAll = () => setSelectedFunds(new Set(funds));
   const selectNone = () => setSelectedFunds(new Set());
   const fmt = (v) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v.toFixed(0)}`;
@@ -544,7 +555,10 @@ export default function Dashboard() {
               St. Edward Fund Dashboard
             </h1>
             <p style={{ margin: 0, fontSize: 16, color: "#888" }}>
-              {fileName} &middot; {rawGifts.length.toLocaleString()} gifts &middot; {funds.length} funds &middot; FY starts July 1
+              {fileName} &middot; {rawGifts.length.toLocaleString()} gifts &middot; {funds.length} fund{funds.length !== 1 ? "s" : ""}
+              {dataLoadedAt && (
+                <> &middot; Loaded {dataLoadedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} at {dataLoadedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</>
+              )}
             </p>
           </div>
         </div>
