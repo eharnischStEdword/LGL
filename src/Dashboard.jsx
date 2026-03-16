@@ -272,7 +272,7 @@ export default function Dashboard() {
 
 
   const filteredData = useMemo(() => {
-    if (!loaded || rawGifts.length === 0 || timeRange === "yoy" || timeRange === "fyoy") return [];
+    if (!loaded || rawGifts.length === 0 || timeRange === "yoy") return [];
     const now = new Date();
     let startDate;
     if (timeRange === "last12") startDate = new Date(now.getFullYear() - 1, now.getMonth(), 1);
@@ -326,30 +326,25 @@ export default function Dashboard() {
     return t;
   }, [filteredData, selectedFunds, loaded]);
 
-  // ─── YoY comparison data ───
+  // ─── YoY comparison data (calendar year: 2025 vs 2026) ───
   const yoyData = useMemo(() => {
-    if (!loaded || rawGifts.length === 0 || (timeRange !== "yoy" && timeRange !== "fyoy")) return [];
+    if (!loaded || rawGifts.length === 0 || timeRange !== "yoy") return [];
     const now = new Date();
-    const fyYears = [2024, 2025];
+    const calYears = [2025, 2026];
+    const currentMonth = now.getMonth(); // 0-11
 
-    // For FY YoY, figure out which fiscal month index we're currently in
-    const currentCalMonth = now.getMonth(); // 0-11
-    const currentFYMonthIdx = (currentCalMonth - FY_START_MONTH + 13) % 12; // 0=Jul, 1=Aug, ..., 11=Jun
-
-    const rows = FY_MONTH_LABELS.map((label, fyMonthIdx) => {
-      // For fyoy, only include months up to the current fiscal month
-      if (timeRange === "fyoy" && fyMonthIdx > currentFYMonthIdx) return null;
+    const rows = MONTHS.map((label, monthIdx) => {
+      // Only include months up to the current month in the current year
+      if (monthIdx > currentMonth) return null;
       const row = { month: label };
-      for (const fy of fyYears) {
-        const calMonth = (fyMonthIdx + FY_START_MONTH - 1) % 12;
-        const calYear = fyMonthIdx < 6 ? fy : fy + 1;
+      for (const yr of calYears) {
         for (const fund of selectedFunds) {
-          const key = `${fund} (${fy}-${String(fy + 1).slice(2)})`;
+          const key = `${fund} (${yr})`;
           let total = 0;
           for (const g of rawGifts) {
             if (g.fund === fund
-              && g.date.getMonth() === calMonth
-              && g.date.getFullYear() === calYear
+              && g.date.getMonth() === monthIdx
+              && g.date.getFullYear() === yr
               && g.date <= now) {
               total += g.amount;
             }
@@ -363,17 +358,17 @@ export default function Dashboard() {
   }, [rawGifts, selectedFunds, timeRange, loaded]);
 
   const yoySeriesKeys = useMemo(() => {
-    if (timeRange !== "yoy" && timeRange !== "fyoy") return [];
+    if (timeRange !== "yoy") return [];
     const keys = [];
     for (const fund of [...selectedFunds].sort()) {
-      keys.push(`${fund} (2024-25)`);
-      keys.push(`${fund} (2025-26)`);
+      keys.push(`${fund} (2025)`);
+      keys.push(`${fund} (2026)`);
     }
     return keys;
   }, [selectedFunds, timeRange]);
 
   const yoyTotals = useMemo(() => {
-    if ((timeRange !== "yoy" && timeRange !== "fyoy") || yoyData.length === 0) return {};
+    if (timeRange !== "yoy" || yoyData.length === 0) return {};
     const t = {};
     for (const key of yoySeriesKeys) {
       t[key] = yoyData.reduce((sum, row) => sum + (row[key] || 0), 0);
@@ -432,8 +427,8 @@ export default function Dashboard() {
   const yoyColorMap = {};
   for (const fund of funds) {
     const base = fundColorMap[fund];
-    yoyColorMap[`${fund} (2024-25)`] = base;
-    yoyColorMap[`${fund} (2025-26)`] = base;
+    yoyColorMap[`${fund} (2025)`] = base;
+    yoyColorMap[`${fund} (2026)`] = base;
   }
 
   const activeFunds = [...selectedFunds].sort();
@@ -616,8 +611,7 @@ export default function Dashboard() {
           { key: "last12", label: "Last 12 Mo" },
           { key: "last24", label: "Last 24 Mo" },
           { key: "all", label: "All (Since Jan '25)" },
-          { key: "yoy", label: "YoY Compare" },
-          { key: "fyoy", label: "FY YoY" }
+          { key: "yoy", label: "YoY Compare" }
         ].map(({ key, label }) => (
           <button
             key={key}
@@ -654,7 +648,7 @@ export default function Dashboard() {
       </div>
 
       {/* Totals */}
-      {activeFunds.length > 0 && timeRange !== "yoy" && timeRange !== "fyoy" && (
+      {activeFunds.length > 0 && timeRange !== "yoy" && (
         <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
           {activeFunds.map(f => (
             <div key={f} style={{
@@ -673,7 +667,7 @@ export default function Dashboard() {
         </div>
       )}
       {/* YoY Totals */}
-      {activeFunds.length > 0 && (timeRange === "yoy" || timeRange === "fyoy") && (
+      {activeFunds.length > 0 && (timeRange === "yoy") && (
         <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
           {yoySeriesKeys.map(key => (
             <div key={key} style={{
@@ -698,7 +692,7 @@ export default function Dashboard() {
         borderRadius: 8, padding: "18px 14px 10px",
         marginBottom: 18, boxShadow: "0 1px 4px rgba(0,89,33,0.04)"
       }}>
-        {(timeRange === "yoy" || timeRange === "fyoy") ? (
+        {(timeRange === "yoy") ? (
           /* ─── YoY / FY YoY Chart ─── */
           yoyData.length === 0 || activeFunds.length === 0 ? (
             <div style={{ textAlign: "center", padding: 60, color: "#aaa", fontSize: 16 }}>
@@ -719,8 +713,8 @@ export default function Dashboard() {
                       type="monotone"
                       dataKey={key}
                       stroke={yoyColorMap[key]}
-                      strokeWidth={key.includes("24-25") ? 2 : 2.5}
-                      strokeDasharray={key.includes("24-25") ? "6 3" : undefined}
+                      strokeWidth={key.includes("(2025)") ? 2 : 2.5}
+                      strokeDasharray={key.includes("(2025)") ? "6 3" : undefined}
                       dot={{ r: 3, fill: yoyColorMap[key] }}
                       activeDot={{ r: 5 }}
                     >
@@ -736,7 +730,7 @@ export default function Dashboard() {
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
                   {yoySeriesKeys.map(key => (
-                    <Bar key={key} dataKey={key} fill={yoyColorMap[key]} radius={[3, 3, 0, 0]} opacity={key.includes("24-25") ? 0.5 : 0.88}>
+                    <Bar key={key} dataKey={key} fill={yoyColorMap[key]} radius={[3, 3, 0, 0]} opacity={key.includes("(2025)") ? 0.5 : 0.88}>
                       <LabelList content={<DataLabel />} />
                     </Bar>
                   ))}
@@ -800,7 +794,7 @@ export default function Dashboard() {
       </div>
 
       {/* Trend indicator */}
-      {timeRange !== "yoy" && timeRange !== "fyoy" && Object.keys(trendPcts).length > 0 && (
+      {timeRange !== "yoy" && Object.keys(trendPcts).length > 0 && (
         <div style={{
           display: "flex", gap: 12, marginBottom: 14, flexWrap: "wrap"
         }}>
