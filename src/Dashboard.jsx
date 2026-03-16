@@ -24,13 +24,13 @@ const SE_OFFWHITE = "#EEF4F1";
 
 const FUND_COLORS = [
   SE_GREEN, SE_BLUE, "#2e8b57", "#3a7a5c", "#005921",
-  "#1a6b3c", "#22763e", "#006644", "#2d7d4f",
+  "#1a6b3c", "#22763e", SE_GOLD, "#006644", "#2d7d4f",
   "#357a38", "#4a9e6e", "#1b5e20", "#4e7a4e", "#5c8a5e"
 ];
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const FY_START_MONTH = 7; // July
-const DATA_FLOOR = new Date(2024, 6, 1); // July 1, 2024 — start of FY 2024-25
+const DATA_FLOOR = new Date(2025, 0, 1); // January 1, 2025 — nothing before this
 
 // Proxied through our server to avoid CORS issues
 const LGL_OFFERTORY_ENDPOINT = "/api/lgl-data";
@@ -152,7 +152,7 @@ const DataLabel = ({ x, y, width, value }) => {
   // For bars, Recharts passes width — center the label over the bar
   const cx = width != null ? x + width / 2 : x;
   return (
-    <text x={cx} y={y - 12} textAnchor="middle" fill={SE_GREEN_DARK} fontSize={16} fontFamily={sans}>
+    <text x={cx} y={y - 12} textAnchor="middle" fill="#555" fontSize={16} fontFamily={sans}>
       {label}
     </text>
   );
@@ -445,7 +445,7 @@ export default function Dashboard() {
         minHeight: "100vh",
         background: SE_OFFWHITE,
         fontFamily: sans,
-        color: SE_GREEN_DARK,
+        color: "#333",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -496,7 +496,7 @@ export default function Dashboard() {
           >
             {fetching === "offertory" ? "Fetching from LGL..." : "Load Offertory Data"}
           </button>
-          <p style={{ fontSize: 16, color: "#7a9b88", marginTop: 0, marginBottom: 18 }}>
+          <p style={{ fontSize: 16, color: "#999", marginTop: 0, marginBottom: 18 }}>
             Pulls the latest Offertory giving data directly from LGL. Reports are automatically refreshed once every weekday.
           </p>
 
@@ -516,7 +516,7 @@ export default function Dashboard() {
           >
             {fetching === "allFunds" ? "Fetching from LGL..." : "Load All Funds Report"}
           </button>
-          <p style={{ fontSize: 16, color: "#7a9b88", marginTop: 0, marginBottom: 20 }}>
+          <p style={{ fontSize: 16, color: "#999", marginTop: 0, marginBottom: 20 }}>
             Pulls all fund data from LGL (Offertory, Capital Campaign, etc.)
           </p>
 
@@ -542,7 +542,7 @@ export default function Dashboard() {
       minHeight: "100vh",
       background: SE_OFFWHITE,
       fontFamily: sans,
-      color: SE_GREEN_DARK,
+      color: "#333",
       padding: "20px 24px"
     }}>
       {/* Header */}
@@ -572,7 +572,7 @@ export default function Dashboard() {
             >
               St. Edward Fund Dashboard
             </h1>
-            <p style={{ margin: 0, fontSize: 16, color: "#5a7a68" }}>
+            <p style={{ margin: 0, fontSize: 16, color: "#888" }}>
               {fileName} &middot; {rawGifts.length.toLocaleString()} gifts &middot; {funds.length} fund{funds.length !== 1 ? "s" : ""}
               {dataLoadedAt && (() => {
                 const today = new Date();
@@ -590,7 +590,7 @@ export default function Dashboard() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {authUser && (
-            <span style={{ fontSize: 16, color: "#5a7a68" }}>
+            <span style={{ fontSize: 16, color: "#888" }}>
               {authUser.name} &middot; <a href="/auth/logout" style={{ color: SE_GREEN, textDecoration: "none", fontWeight: 600 }}>Sign out</a>
             </span>
           )}
@@ -615,7 +615,7 @@ export default function Dashboard() {
           { key: "ytd", label: "YTD" },
           { key: "last12", label: "Last 12 Mo" },
           { key: "last24", label: "Last 24 Mo" },
-          { key: "all", label: "All (Since Jul '24)" },
+          { key: "all", label: "All (Since Jan '25)" },
           { key: "yoy", label: "YoY Compare" },
           { key: "fyoy", label: "FY YoY" }
         ].map(({ key, label }) => (
@@ -626,7 +626,7 @@ export default function Dashboard() {
               padding: "9px 18px", borderRadius: 6,
               border: timeRange === key ? `2px solid ${SE_GREEN}` : "1px solid #ccc",
               background: timeRange === key ? `${SE_GREEN}12` : "#fff",
-              color: timeRange === key ? SE_GREEN_DARK : "#7a9b88",
+              color: timeRange === key ? SE_GREEN_DARK : "#777",
               fontSize: 16, fontWeight: timeRange === key ? 700 : 500,
               cursor: "pointer", transition: "all 0.15s"
             }}
@@ -643,7 +643,7 @@ export default function Dashboard() {
               padding: "9px 18px", borderRadius: 6,
               border: chartType === t ? `2px solid ${SE_GREEN}` : "1px solid #ccc",
               background: chartType === t ? `${SE_GREEN}12` : "#fff",
-              color: chartType === t ? SE_GREEN_DARK : "#7a9b88",
+              color: chartType === t ? SE_GREEN_DARK : "#999",
               fontSize: 16, fontWeight: chartType === t ? 700 : 500,
               cursor: "pointer"
             }}
@@ -664,7 +664,7 @@ export default function Dashboard() {
               borderRadius: 6, minWidth: 150,
               boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
             }}>
-              <div style={{ fontSize: 16, color: "#5a7a68", marginBottom: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{f}</div>
+              <div style={{ fontSize: 16, color: "#888", marginBottom: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{f}</div>
               <div style={{ fontSize: 24, fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif }}>
                 {fmtFull(totals[f] || 0)}
               </div>
@@ -683,7 +683,7 @@ export default function Dashboard() {
               borderRadius: 6, minWidth: 150,
               boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
             }}>
-              <div style={{ fontSize: 16, color: "#5a7a68", marginBottom: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{key}</div>
+              <div style={{ fontSize: 16, color: "#888", marginBottom: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{key}</div>
               <div style={{ fontSize: 24, fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif }}>
                 {fmtFull(yoyTotals[key] || 0)}
               </div>
@@ -701,7 +701,7 @@ export default function Dashboard() {
         {(timeRange === "yoy" || timeRange === "fyoy") ? (
           /* ─── YoY / FY YoY Chart ─── */
           yoyData.length === 0 || activeFunds.length === 0 ? (
-            <div style={{ textAlign: "center", padding: 60, color: "#8aab96", fontSize: 16 }}>
+            <div style={{ textAlign: "center", padding: 60, color: "#aaa", fontSize: 16 }}>
               {activeFunds.length === 0 ? "Select at least one fund below." : "No data for YoY comparison."}
             </div>
           ) : (
@@ -709,8 +709,8 @@ export default function Dashboard() {
               {chartType === "line" ? (
                 <LineChart data={yoyData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}10`} />
-                  <XAxis dataKey="month" tick={{ fill: "#5a7a68", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
-                  <YAxis tickFormatter={fmt} tick={{ fill: "#5a7a68", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <YAxis tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
                   {yoySeriesKeys.map(key => (
@@ -731,8 +731,8 @@ export default function Dashboard() {
               ) : (
                 <BarChart data={yoyData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}10`} />
-                  <XAxis dataKey="month" tick={{ fill: "#5a7a68", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
-                  <YAxis tickFormatter={fmt} tick={{ fill: "#5a7a68", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <YAxis tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
                   {yoySeriesKeys.map(key => (
@@ -747,7 +747,7 @@ export default function Dashboard() {
         ) : (
           /* ─── Standard Chart ─── */
           chartData.length === 0 || activeFunds.length === 0 ? (
-            <div style={{ textAlign: "center", padding: 60, color: "#8aab96", fontSize: 16 }}>
+            <div style={{ textAlign: "center", padding: 60, color: "#aaa", fontSize: 16 }}>
               {activeFunds.length === 0 ? "Select at least one fund below." : "No data for the selected range."}
             </div>
           ) : (
@@ -755,8 +755,8 @@ export default function Dashboard() {
               {chartType === "line" ? (
                 <LineChart data={chartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}10`} />
-                  <XAxis dataKey="month" tick={{ fill: "#5a7a68", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
-                  <YAxis tickFormatter={fmt} tick={{ fill: "#5a7a68", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
+                  <YAxis tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
                   {activeFunds.map(f => (
@@ -783,8 +783,8 @@ export default function Dashboard() {
               ) : (
                 <BarChart data={chartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}10`} />
-                  <XAxis dataKey="month" tick={{ fill: "#5a7a68", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
-                  <YAxis tickFormatter={fmt} tick={{ fill: "#5a7a68", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
+                  <YAxis tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
                   {activeFunds.map(f => (
@@ -815,7 +815,7 @@ export default function Dashboard() {
               last24: "over last 24 months",
               ytd: "year to date",
               fy: "this fiscal year",
-              all: "since Jul 2024"
+              all: "since Jan 2025"
             }[timeRange] || "in this view";
             return (
               <div key={f} style={{
@@ -828,11 +828,11 @@ export default function Dashboard() {
                   width: 10, height: 10, borderRadius: 3,
                   background: fundColorMap[f]
                 }} />
-                <span style={{ color: "#3d6b4f" }}>{f}:</span>
+                <span style={{ color: "#666" }}>{f}:</span>
                 <span style={{ fontWeight: 700, color, fontSize: 18 }}>
                   {arrow} {Math.abs(pct).toFixed(1)}%
                 </span>
-                <span style={{ color: "#7a9b88", fontSize: 16 }}>{rangeLabel}</span>
+                <span style={{ color: "#999", fontSize: 16 }}>{rangeLabel}</span>
               </div>
             );
           })}
@@ -866,7 +866,7 @@ export default function Dashboard() {
                   padding: "5px 13px", borderRadius: 6,
                   border: active ? `2px solid ${color}` : "1px solid #ddd",
                   background: active ? `${color}10` : "#fafafa",
-                  color: active ? SE_GREEN_DARK : "#7a9b88",
+                  color: active ? SE_GREEN_DARK : "#999",
                   fontSize: 16, fontWeight: active ? 600 : 400,
                   cursor: "pointer", transition: "all 0.15s"
                 }}
@@ -931,7 +931,7 @@ export default function Dashboard() {
                 Financial Snapshot ({monthName(lastMonth)})
               </span>
               <span style={{
-                fontSize: 16, color: "#8aab96", fontStyle: "italic"
+                fontSize: 16, color: "#aaa", fontStyle: "italic"
               }}>
                 For parish bulletin
               </span>
@@ -952,21 +952,21 @@ export default function Dashboard() {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 16, fontFamily: sans }}>
                 <tbody>
                   <tr>
-                    <td style={{ padding: "6px 0", color: SE_GREEN_DARK }}>{monthName(lastMonth)}</td>
+                    <td style={{ padding: "6px 0", color: "#444" }}>{monthName(lastMonth)}</td>
                     <td style={{ padding: "6px 0", textAlign: "right", fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif, fontSize: 18 }}>
                       {fmtFull(lastMonthTotal)}
                     </td>
                   </tr>
                   <tr style={{ borderTop: "1px solid #eee" }}>
-                    <td style={{ padding: "6px 0", color: SE_GREEN_DARK }}>{monthName(prevMonth)}</td>
+                    <td style={{ padding: "6px 0", color: "#444" }}>{monthName(prevMonth)}</td>
                     <td style={{ padding: "6px 0", textAlign: "right", fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif, fontSize: 18 }}>
                       {fmtFull(prevMonthTotal)}
                     </td>
                   </tr>
                   <tr style={{ borderTop: "1px solid #eee" }}>
-                    <td style={{ padding: "6px 0", color: "#3d6b4f" }}>{monthName(lastYearMonth)} <span style={{ color: "#8aab96" }}>(comparison)</span></td>
+                    <td style={{ padding: "6px 0", color: "#666" }}>{monthName(lastYearMonth)} <span style={{ color: "#aaa" }}>(comparison)</span></td>
                     <td style={{ padding: "6px 0", textAlign: "right", fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif, fontSize: 18 }}>
-                      {lastYearTotal > 0 ? fmtFull(lastYearTotal) : <span style={{ color: "#8aab96", fontWeight: 400, fontSize: 16 }}>No data</span>}
+                      {lastYearTotal > 0 ? fmtFull(lastYearTotal) : <span style={{ color: "#aaa", fontWeight: 400, fontSize: 16 }}>No data</span>}
                     </td>
                   </tr>
                 </tbody>
@@ -988,7 +988,7 @@ export default function Dashboard() {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 16, fontFamily: sans }}>
                 <tbody>
                   <tr>
-                    <td style={{ padding: "6px 0", color: SE_GREEN_DARK }}>
+                    <td style={{ padding: "6px 0", color: "#444" }}>
                       Month-to-month ({MONTHS[lastMonth.getMonth()]} vs {MONTHS[prevMonth.getMonth()]})
                     </td>
                     <td style={{ padding: "6px 0", textAlign: "right", fontWeight: 700, color: diffColor(monthDiff), fontFamily: serif, fontSize: 18 }}>
@@ -997,7 +997,7 @@ export default function Dashboard() {
                   </tr>
                   {lastYearTotal > 0 && (
                     <tr style={{ borderTop: "1px solid #eee" }}>
-                      <td style={{ padding: "6px 0", color: SE_GREEN_DARK }}>
+                      <td style={{ padding: "6px 0", color: "#444" }}>
                         Year-over-year ({monthName(lastMonth)} vs {monthName(lastYearMonth)})
                       </td>
                       <td style={{ padding: "6px 0", textAlign: "right", fontWeight: 700, color: diffColor(yearDiff), fontFamily: serif, fontSize: 18 }}>
@@ -1027,7 +1027,7 @@ export default function Dashboard() {
               </div>
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
                 <div style={{ flex: 1, minWidth: 180 }}>
-                  <label style={{ fontSize: 16, color: "#3d6b4f", display: "block", marginBottom: 4 }}>Total Revenue</label>
+                  <label style={{ fontSize: 16, color: "#666", display: "block", marginBottom: 4 }}>Total Revenue</label>
                   <input
                     type="text"
                     value={fyRevenue}
@@ -1041,7 +1041,7 @@ export default function Dashboard() {
                   />
                 </div>
                 <div style={{ flex: 1, minWidth: 180 }}>
-                  <label style={{ fontSize: 16, color: "#3d6b4f", display: "block", marginBottom: 4 }}>Total Expenses</label>
+                  <label style={{ fontSize: 16, color: "#666", display: "block", marginBottom: 4 }}>Total Expenses</label>
                   <input
                     type="text"
                     value={fyExpenses}
@@ -1079,19 +1079,19 @@ export default function Dashboard() {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 16, fontFamily: sans }}>
                     <tbody>
                       <tr>
-                        <td style={{ padding: "6px 0", color: SE_GREEN_DARK }}>Total Revenue</td>
+                        <td style={{ padding: "6px 0", color: "#444" }}>Total Revenue</td>
                         <td style={{ padding: "6px 0", textAlign: "right", fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif, fontSize: 18 }}>
                           {fmtFull(rev)}
                         </td>
                       </tr>
                       <tr style={{ borderTop: "1px solid #eee" }}>
-                        <td style={{ padding: "6px 0", color: SE_GREEN_DARK }}>Total Expenses</td>
+                        <td style={{ padding: "6px 0", color: "#444" }}>Total Expenses</td>
                         <td style={{ padding: "6px 0", textAlign: "right", fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif, fontSize: 18 }}>
                           {fmtFull(exp)}
                         </td>
                       </tr>
                       <tr style={{ borderTop: `2px solid ${SE_GREEN}30` }}>
-                        <td style={{ padding: "8px 0", color: SE_GREEN_DARK, fontWeight: 700, fontSize: 17 }}>Net Income</td>
+                        <td style={{ padding: "8px 0", color: "#222", fontWeight: 700, fontSize: 17 }}>Net Income</td>
                         <td style={{ padding: "8px 0", textAlign: "right", fontWeight: 700, color: netColor, fontFamily: serif, fontSize: 20 }}>
                           {net < 0 ? `(${fmtFull(Math.abs(net))})` : fmtFull(net)}
                         </td>
@@ -1105,7 +1105,7 @@ export default function Dashboard() {
         );
       })()}
 
-      <div style={{ marginTop: 16, fontSize: 16, color: "#8aab96", textAlign: "center" }}>
+      <div style={{ marginTop: 16, fontSize: 16, color: "#aaa", textAlign: "center" }}>
         Gifts aggregated by calendar month per fund. Fiscal year begins July 1. Dashed lines show trend.
       </div>
     </div>
