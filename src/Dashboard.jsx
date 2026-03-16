@@ -609,7 +609,6 @@ export default function Dashboard() {
           { key: "fy", label: getFYLabel() },
           { key: "ytd", label: "YTD" },
           { key: "last12", label: "Last 12 Mo" },
-          { key: "last24", label: "Last 24 Mo" },
           { key: "all", label: "All (Since Jan '25)" },
           { key: "yoy", label: "YoY Compare" }
         ].map(({ key, label }) => (
