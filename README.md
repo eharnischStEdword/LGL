@@ -1,17 +1,49 @@
 # St. Edward Church - Fund Giving Dashboard
 
-A client-side dashboard for visualizing fund giving data exported from Little Green Light. Built for St. Edward Church, Nashville TN.
+A dashboard for visualizing fund giving data from Little Green Light (LGL). Built for St. Edward Church, Nashville TN.
 
-No data leaves the browser. The CSV is parsed and charted entirely on the client.
+Data is pulled live from LGL via scheduled permanent links, topped up with real-time gifts from the LGL API. Access is restricted to authorized St. Edward staff via Microsoft SSO.
 
-## How to use
+## How it works
 
-1. In LGL, run a **Comprehensive Export**
-2. Unzip the downloaded file
-3. Open the extracted folder, then open **Full_Archive**
-4. Upload **gift_gifts.csv** to the dashboard
+1. **Permanent links** — LGL generates daily exports (XLSX/CSV) of all gifts. The server proxies these to the browser.
+2. **API top-up** — After loading the permanent link data, the dashboard fetches any gifts added or updated since the report was generated, so data is current to the minute.
+3. **Two views** — "Load Offertory Data" (Offertory fund only, server-parsed with API top-up) and "Load All Funds Report" (all funds, client-parsed with API top-up).
 
-The tool auto-detects columns for gift date, gift amount, and fund. If your export uses different column names, manual mapping dropdowns appear.
+## Architecture
+
+- **Frontend:** React 18, Vite 6, Recharts (charts), SheetJS (spreadsheet parsing)
+- **Backend:** Node.js + Express server (`server.js`)
+  - Proxies LGL permanent links (avoids CORS)
+  - Hybrid endpoint: parses Offertory XLSX server-side, merges with LGL API gifts
+  - Lightweight recent-gifts endpoint for All Funds client-side top-up
+  - Microsoft Entra ID (Azure AD) SSO authentication
+  - User allow-list (email-based)
+
+## Environment variables
+
+Set these in Render (or `.env` for local dev):
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `CLIENT_ID` | Yes | Microsoft Entra app registration client ID |
+| `CLIENT_SECRET` | Yes | Microsoft Entra client secret (enables auth) |
+| `TENANT_ID` | Yes | Microsoft Entra tenant ID |
+| `REDIRECT_URI` | Yes | OAuth callback URL (e.g. `https://lgl.onrender.com/auth/callback`) |
+| `LGL_API_KEY` | Yes | LGL API key for real-time gift top-up |
+| `SESSION_SECRET` | No | Auto-generated if not set |
+| `ALLOWED_DASHBOARD_USERS` | No | Comma-separated emails (defaults to hardcoded list in server.js) |
+
+## LGL setup
+
+Two scheduled reports (Gift/Pledge Reports > Scheduled reports):
+
+- **Offertory/Fund Export Update** — Funds: Offertory, Gift type: Gift, Date: from 2024-07-01, Schedule: Daily
+- **FULL GIVING REPORT** — Funds: all active funds, Gift type: Gift, Date: from 2024-07-01, Schedule: Daily
+
+When a new fund is added in LGL, you must manually add it to the FULL GIVING REPORT's fund selection.
+
+The LGL API key is generated under Settings > Integration Settings > LGL API.
 
 ## Local development
 
@@ -20,42 +52,26 @@ npm install
 npm run dev
 ```
 
-Opens at http://localhost:5173
-
-## Build for production
-
-```
-npm run build
-```
-
-Output goes to `dist/`. That folder contains everything needed to serve the site.
+Opens at http://localhost:5173. Auth is disabled when `CLIENT_SECRET` is not set.
 
 ## Deploy to Render
 
-Two options:
+This is a **Web Service** (not a Static Site) because it has a Node.js backend.
 
 **Option A: Blueprint (render.yaml)**
 1. Push this repo to GitHub
 2. In Render, click New > Blueprint
 3. Point it at this repo
-4. Render reads `render.yaml` and sets everything up
+4. Add the required environment variables
 
-**Option B: Manual static site**
-1. Push this repo to GitHub
-2. In Render, click New > Static Site
-3. Connect your GitHub repo
-4. Build command: `npm install && npm run build`
-5. Publish directory: `dist`
-6. Set NODE_VERSION environment variable to `20`
+**Option B: Manual**
+1. In Render, click New > Web Service
+2. Connect your GitHub repo
+3. Build command: `npm install && npm run build`
+4. Start command: `node server.js`
+5. Add all environment variables from the table above
 
-Either way, Render auto-deploys on every push to main.
-
-## Custom domain
-
-After the site is live on Render:
-1. In Render dashboard, go to the site's Settings > Custom Domains
-2. Add your domain (e.g., dashboard.stedward.org)
-3. Render gives you a CNAME record to add in your DNS settings
+Auto-deploys on every push to main.
 
 ## Brand colors
 
@@ -71,11 +87,3 @@ From the official St. Edward Style Guide:
 | Off-white | - | #EEF4F1 |
 
 Font: Mrs Eaves Roman (approximated with Georgia in the browser)
-
-## Tech stack
-
-- React 18
-- Vite 6
-- Recharts (charting)
-- PapaParse (CSV parsing)
-- No backend, no database, no API keys

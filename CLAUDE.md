@@ -2,26 +2,39 @@
 
 ## Project
 St. Edward Church (Nashville TN) Fund Giving Dashboard.
-Client-side React app that visualizes LGL (Little Green Light) gift data by fund.
-Branded with official St. Edward colors. No backend. No data leaves the browser.
+React app with Node.js backend that visualizes LGL (Little Green Light) gift data by fund.
+Branded with official St. Edward colors. Data is fetched from LGL permanent links + API.
 
 ## Commands
 - `npm run dev` - Start dev server at http://localhost:5173
 - `npm run build` - Production build to dist/
 - `npm run preview` - Preview production build locally
+- `node server.js` - Start production server (serves dist/ + API routes)
 
 ## Deploy
 Push to main branch. Render auto-deploys from GitHub.
 - Repo: https://github.com/eharnischStEdword/LGL
-- Live: https://lgl-dashboard.onrender.com
+- Live: https://lgl.onrender.com
 - Render build command: npm install && npm run build
-- Render publish dir: dist
+- Render start command: node server.js
+- Render type: Web Service (not Static Site)
 
 ## Architecture
-- Single-page React 18 app built with Vite 6
-- All logic lives in src/Dashboard.jsx (one big component)
-- Recharts for charts, PapaParse for CSV parsing
-- No router, no state management library, no backend
+- React 18 frontend built with Vite 6, all UI in src/Dashboard.jsx
+- Node.js + Express backend in server.js
+  - Proxies LGL permanent links (CORS)
+  - Hybrid endpoint: parses Offertory XLSX server-side, merges LGL API gifts
+  - Lightweight /api/lgl-recent-gifts endpoint for All Funds client-side top-up
+  - Microsoft Entra ID SSO with email allow-list
+- Recharts for charts, SheetJS (xlsx) for spreadsheet parsing
+- No router, no state management library
+
+## Environment Variables (Render)
+- CLIENT_ID, CLIENT_SECRET, TENANT_ID — Microsoft Entra SSO
+- REDIRECT_URI — OAuth callback (https://lgl.onrender.com/auth/callback)
+- LGL_API_KEY — LGL API key for real-time gift top-up
+- SESSION_SECRET — auto-generated if not set
+- ALLOWED_DASHBOARD_USERS — comma-separated authorized emails
 
 ## Brand Colors (from official style guide)
 - Green PMS 348C: #00843D (primary), #005921 (dark)
@@ -34,9 +47,11 @@ Push to main branch. Render auto-deploys from GitHub.
 ## Key Facts
 - Fiscal year starts July 1
 - Dashboard auto-selects "Offertory" fund if found
-- CSV source: LGL Comprehensive Export > Full_Archive > gift_gifts.csv
-- LGL Zapier/webhooks are inbound-only, cannot export data
-- Data export options: Permanent Links (scheduled reports) or LGL API
+- Two LGL scheduled reports feed the dashboard (Offertory-only and All Funds)
+- When a new fund is added in LGL, manually add it to the FULL GIVING REPORT's fund selection
+- LGL API key: Settings > Integration Settings > LGL API
+- Data flow: permanent link (bulk daily) + API top-up (real-time recent gifts)
+- 5-minute server-side cache on hybrid/recent endpoints
 
 ## User
 Eric is not a developer. Explain before running destructive commands.
