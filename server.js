@@ -315,7 +315,7 @@ function normalizeDateForDedup(val) {
   // Excel serial number (e.g. 46093)
   const num = typeof val === "number" ? val : parseFloat(val);
   if (!isNaN(num) && num > 25000 && num < 60000) {
-    const d = new Date(1899, 11, 30 + Math.floor(num));
+    const d = new Date(1899, 11, 30 + Math.round(num));
     if (!isNaN(d.getTime())) {
       return d.toISOString().slice(0, 10);
     }

@@ -62,7 +62,9 @@ function parseDateFlexible(str) {
   const num = typeof str === "number" ? str : parseFloat(str);
   if (!isNaN(num) && num > 25000 && num < 60000) {
     // Excel serial: days since 1899-12-30 (use local time, not UTC)
-    const d = new Date(1899, 11, 30 + Math.floor(num));
+    // Use Math.round — CSV-parsed serials can be fractional (e.g. 45808.79)
+    // and Math.floor would shift them back one day
+    const d = new Date(1899, 11, 30 + Math.round(num));
     if (!isNaN(d.getTime())) return d;
   }
   const d = new Date(str);
@@ -250,7 +252,7 @@ export default function Dashboard() {
                     if (!val) return "";
                     const num = typeof val === "number" ? val : parseFloat(val);
                     if (!isNaN(num) && num > 25000 && num < 60000) {
-                      const d = new Date(1899, 11, 30 + Math.floor(num));
+                      const d = new Date(1899, 11, 30 + Math.round(num));
                       if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
                     }
                     const d = new Date(val);
