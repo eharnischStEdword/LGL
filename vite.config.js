@@ -5,18 +5,17 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: 'dist',
+    chunkSizeWarningLimit: 1000, // SheetJS is large; suppress warning for internal app
   },
   server: {
     proxy: {
-      '/api/lgl-data': {
-        target: 'https://stedward.littlegreenlight.com',
+      '/api': {
+        target: 'http://localhost:3000',
         changeOrigin: true,
-        rewrite: () => '/rptlink/5957dd30-a1b2-402b-b30a-3bd21e02f604',
       },
-      '/api/lgl-all-funds': {
-        target: 'https://stedward.littlegreenlight.com',
+      '/auth': {
+        target: 'http://localhost:3000',
         changeOrigin: true,
-        rewrite: () => '/rptlink/e7599438-bb83-4b84-b3ca-955a11f03004',
       },
     },
   },

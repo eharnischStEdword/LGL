@@ -33,8 +33,8 @@ const FY_START_MONTH = 7; // July
 const DATA_FLOOR = new Date(2025, 0, 1); // January 1, 2025 — nothing before this
 
 // Proxied through our server to avoid CORS issues
-const LGL_OFFERTORY_ENDPOINT = "/api/lgl-data";
-const LGL_ALL_FUNDS_ENDPOINT = "/api/lgl-all-funds";
+const LGL_OFFERTORY_ENDPOINT = "/api/lgl-data-hybrid";
+const LGL_ALL_FUNDS_ENDPOINT = "/api/lgl-all-funds-hybrid";
 
 const sans = "'Trebuchet MS', 'Calibri', sans-serif";
 const serif = "'Georgia', 'Cambria', serif";
@@ -218,20 +218,14 @@ export default function Dashboard() {
       const endpoint = offertoryOnly ? LGL_OFFERTORY_ENDPOINT : LGL_ALL_FUNDS_ENDPOINT;
       const resp = await fetch(endpoint);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
-      const ct = resp.headers.get("content-type") || "";
-      const reportDate = resp.headers.get("x-report-date"); // e.g. "2026-03-15"
-      const buf = await resp.arrayBuffer();
-      const allRows = parseSpreadsheet(buf, ct);
-      const label = offertoryOnly ? "LGL - Offertory (live)" : "LGL - All Funds (live)";
-      // Use the date from LGL's filename (when the report was generated)
-      if (reportDate) {
-        // Parse as local date (not UTC) by splitting the parts
-        const [y, m, d] = reportDate.split("-").map(Number);
-        setDataLoadedAt(new Date(y, m - 1, d));
-      } else {
-        setDataLoadedAt(new Date());
-      }
-      loadRows(allRows, label);
+      const json = await resp.json();
+      const { rows, refreshedAt, apiGiftsAdded } = json;
+      const extra = apiGiftsAdded ? `, +${apiGiftsAdded} recent` : "";
+      const label = offertoryOnly
+        ? `LGL - Offertory (live${extra})`
+        : `LGL - All Funds (live${extra})`;
+      setDataLoadedAt(new Date(refreshedAt));
+      loadRows(rows, label);
     } catch (err) {
       setError(`Could not fetch from LGL: ${err.message}`);
     } finally {
@@ -570,14 +564,21 @@ export default function Dashboard() {
             <p style={{ margin: 0, fontSize: 16, color: "#888" }}>
               {fileName} &middot; {rawGifts.length.toLocaleString()} gifts &middot; {funds.length} fund{funds.length !== 1 ? "s" : ""}
               {dataLoadedAt && (() => {
-                const today = new Date();
-                today.setHours(0,0,0,0);
-                const rpt = new Date(dataLoadedAt);
-                rpt.setHours(0,0,0,0);
-                const days = Math.round((today - rpt) / 86400000);
-                const ago = days === 0 ? "today" : days === 1 ? "1 day ago" : `${days} days ago`;
+                const now = new Date();
+                const diffMs = now - dataLoadedAt;
+                const diffMins = Math.round(diffMs / 60000);
+                let ago;
+                if (diffMins < 1) ago = "just now";
+                else if (diffMins < 60) ago = `${diffMins}m ago`;
+                else if (diffMins < 1440) ago = `${Math.round(diffMins / 60)}h ago`;
+                else {
+                  const days = Math.round(diffMins / 1440);
+                  ago = days === 1 ? "1 day ago" : `${days} days ago`;
+                }
+                const timeStr = dataLoadedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+                const dateStr = dataLoadedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
                 return (
-                  <> &middot; Report from {dataLoadedAt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} ({ago})</>
+                  <> &middot; Data as of {dateStr} at {timeStr} ({ago})</>
                 );
               })()}
             </p>
