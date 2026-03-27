@@ -401,10 +401,8 @@ app.get("/api/lgl-data-hybrid", requireAuth, async (req, res) => {
   catch (err) { console.error("Hybrid fetch error:", err); res.status(502).json({ error: err.message }); }
 });
 
-app.get("/api/lgl-all-funds-hybrid", requireAuth, async (req, res) => {
-  try { await hybridFetch(LGL_ALL_FUNDS_URL, null, res); }
-  catch (err) { console.error("Hybrid fetch error:", err); res.status(502).json({ error: err.message }); }
-});
+// All Funds report is too large for server-side XLSX parsing (OOM on Render).
+// It uses the legacy proxy endpoint (/api/lgl-all-funds) instead.
 
 // ─── Auth gate: redirect unauthenticated users to login ───
 if (AUTH_ENABLED) {
