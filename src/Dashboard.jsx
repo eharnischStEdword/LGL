@@ -228,17 +228,64 @@ export default function Dashboard() {
         setDataLoadedAt(new Date(refreshedAt));
         loadRows(rows, label);
       } else {
-        // Legacy endpoint returns binary spreadsheet
+        // Legacy endpoint returns binary spreadsheet — parse client-side
         const reportDate = resp.headers.get("x-report-date");
         const buf = await resp.arrayBuffer();
         const allRows = parseSpreadsheet(buf, ct);
-        const label = "LGL - All Funds (live)";
+
+        // Top up with recent gifts from API (lightweight, no server-side XLSX parsing)
+        let apiGiftsAdded = 0;
         if (reportDate) {
-          const [y, m, d] = reportDate.split("-").map(Number);
-          setDataLoadedAt(new Date(y, m - 1, d));
-        } else {
-          setDataLoadedAt(new Date());
+          try {
+            const apiResp = await fetch(`/api/lgl-recent-gifts?since=${reportDate}`);
+            if (apiResp.ok) {
+              const { gifts, refreshedAt } = await apiResp.json();
+              if (gifts && gifts.length > 0) {
+                // Detect columns from the spreadsheet rows
+                const hdrs = Object.keys(allRows[0]);
+                const cols = detectColumns(hdrs);
+                if (cols.dateCol && cols.amountCol && cols.fundCol) {
+                  // Build dedup set
+                  const seen = new Set();
+                  for (const row of allRows) {
+                    const d = String(row[cols.dateCol] || "").trim();
+                    const a = parseFloat(String(row[cols.amountCol] || "0").replace(/[$,]/g, "")) || 0;
+                    const f = String(row[cols.fundCol] || "").trim().toLowerCase();
+                    seen.add(`${d}|${a.toFixed(2)}|${f}`);
+                  }
+                  for (const g of gifts) {
+                    const key = `${g.date}|${Number(g.amount).toFixed(2)}|${(g.fund || "").toLowerCase()}`;
+                    if (!seen.has(key)) {
+                      const newRow = {};
+                      newRow[cols.dateCol] = g.date;
+                      newRow[cols.amountCol] = g.amount;
+                      newRow[cols.fundCol] = g.fund;
+                      allRows.push(newRow);
+                      seen.add(key);
+                      apiGiftsAdded++;
+                    }
+                  }
+                }
+              }
+              if (refreshedAt) {
+                setDataLoadedAt(new Date(refreshedAt));
+              }
+            }
+          } catch (e) {
+            // API top-up failed silently — permanent link data still loads
+            console.warn("API top-up failed:", e.message);
+          }
         }
+        if (!dataLoadedAt) {
+          if (reportDate) {
+            const [y, m, d] = reportDate.split("-").map(Number);
+            setDataLoadedAt(new Date(y, m - 1, d));
+          } else {
+            setDataLoadedAt(new Date());
+          }
+        }
+        const extra = apiGiftsAdded ? `, +${apiGiftsAdded} recent` : "";
+        const label = `LGL - All Funds (live${extra})`;
         loadRows(allRows, label);
       }
     } catch (err) {

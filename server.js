@@ -401,8 +401,42 @@ app.get("/api/lgl-data-hybrid", requireAuth, async (req, res) => {
   catch (err) { console.error("Hybrid fetch error:", err); res.status(502).json({ error: err.message }); }
 });
 
-// All Funds report is too large for server-side XLSX parsing (OOM on Render).
-// It uses the legacy proxy endpoint (/api/lgl-all-funds) instead.
+// Lightweight API-only endpoint: returns recent gifts as JSON rows.
+// No XLSX parsing — safe for memory. Frontend merges these into its own parsed data.
+app.get("/api/lgl-recent-gifts", requireAuth, async (req, res) => {
+  const sinceDate = req.query.since; // e.g. "2026-03-27"
+  if (!sinceDate || !/^\d{4}-\d{2}-\d{2}$/.test(sinceDate)) {
+    return res.status(400).json({ error: "Missing or invalid 'since' param (YYYY-MM-DD)" });
+  }
+  if (!LGL_API_KEY) {
+    return res.json({ gifts: [], message: "No LGL_API_KEY configured" });
+  }
+
+  // Check cache
+  const cacheKey = `recent_${sinceDate}`;
+  const cached = hybridCache[cacheKey];
+  if (cached && Date.now() - cached.time < CACHE_TTL) {
+    console.log(`[recent] Serving cached response`);
+    return res.json(cached.data);
+  }
+
+  try {
+    const apiGifts = await fetchLGLApiGifts(sinceDate);
+    console.log(`[recent] API returned ${apiGifts.length} gifts since ${sinceDate}`);
+    // Return minimal row data the frontend can merge
+    const gifts = apiGifts.map(g => ({
+      date: g.received_date || "",
+      amount: g.received_amount || 0,
+      fund: g.fund_name || "",
+    }));
+    const result = { gifts, refreshedAt: new Date().toISOString() };
+    hybridCache[cacheKey] = { time: Date.now(), data: result };
+    res.json(result);
+  } catch (err) {
+    console.error("[recent] API error:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
 
 // ─── Auth gate: redirect unauthenticated users to login ───
 if (AUTH_ENABLED) {
