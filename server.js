@@ -309,9 +309,26 @@ function apiGiftToRow(gift, dateCol, amountCol, fundCol) {
   return row;
 }
 
+// Normalize any date value to YYYY-MM-DD for consistent dedup
+function normalizeDateForDedup(val) {
+  if (!val) return "";
+  // Excel serial number (e.g. 46093)
+  const num = typeof val === "number" ? val : parseFloat(val);
+  if (!isNaN(num) && num > 25000 && num < 60000) {
+    const d = new Date(1899, 11, 30 + Math.floor(num));
+    if (!isNaN(d.getTime())) {
+      return d.toISOString().slice(0, 10);
+    }
+  }
+  // Try parsing as date string
+  const d = new Date(val);
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  return String(val).trim();
+}
+
 // Build a dedup key from a row
 function deduplicateKey(row, dateCol, amountCol, fundCol) {
-  const dateStr = String(row[dateCol] || "").trim();
+  const dateStr = normalizeDateForDedup(row[dateCol]);
   const amount = parseFloat(String(row[amountCol] || "0").replace(/[$,]/g, "")) || 0;
   const fund = String(row[fundCol] || "").trim().toLowerCase();
   return `${dateStr}|${amount.toFixed(2)}|${fund}`;

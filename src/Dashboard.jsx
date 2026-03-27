@@ -245,16 +245,28 @@ export default function Dashboard() {
                 const hdrs = Object.keys(allRows[0]);
                 const cols = detectColumns(hdrs);
                 if (cols.dateCol && cols.amountCol && cols.fundCol) {
+                  // Normalize date to YYYY-MM-DD for consistent dedup
+                  function normDate(val) {
+                    if (!val) return "";
+                    const num = typeof val === "number" ? val : parseFloat(val);
+                    if (!isNaN(num) && num > 25000 && num < 60000) {
+                      const d = new Date(1899, 11, 30 + Math.floor(num));
+                      if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+                    }
+                    const d = new Date(val);
+                    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+                    return String(val).trim();
+                  }
                   // Build dedup set
                   const seen = new Set();
                   for (const row of allRows) {
-                    const d = String(row[cols.dateCol] || "").trim();
+                    const d = normDate(row[cols.dateCol]);
                     const a = parseFloat(String(row[cols.amountCol] || "0").replace(/[$,]/g, "")) || 0;
                     const f = String(row[cols.fundCol] || "").trim().toLowerCase();
                     seen.add(`${d}|${a.toFixed(2)}|${f}`);
                   }
                   for (const g of gifts) {
-                    const key = `${g.date}|${Number(g.amount).toFixed(2)}|${(g.fund || "").toLowerCase()}`;
+                    const key = `${normDate(g.date)}|${Number(g.amount).toFixed(2)}|${(g.fund || "").toLowerCase()}`;
                     if (!seen.has(key)) {
                       const newRow = {};
                       newRow[cols.dateCol] = g.date;
