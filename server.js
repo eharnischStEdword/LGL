@@ -292,6 +292,11 @@ async function fetchLGLApiGifts(sinceDate, fundFilter) {
     if (offset + items.length >= (data.total_items || 0)) break;
     offset += limit;
   }
+  // Filter by fund client-side since LGL API doesn't support fund_name as a query param
+  if (fundFilter) {
+    const filterLower = fundFilter.toLowerCase();
+    return gifts.filter(g => (g.fund_name || "").toLowerCase() === filterLower);
+  }
   return gifts;
 }
 
