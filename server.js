@@ -274,7 +274,6 @@ async function fetchLGLApiGifts(sinceDate, fundFilter) {
   for (let page = 0; page < maxPages; page++) {
     const params = new URLSearchParams();
     params.append("q[]", `updated_from=${sinceDate}`);
-    if (fundFilter) params.append("q[]", `fund_name=${fundFilter}`);
     params.append("limit", String(limit));
     params.append("offset", String(offset));
 
