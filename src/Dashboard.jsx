@@ -345,10 +345,10 @@ export default function Dashboard() {
     if (!loaded || rawGifts.length === 0 || timeRange === "yoy") return [];
     const now = new Date();
     let startDate;
-    if (timeRange === "last12") startDate = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+    if (timeRange === "last12") startDate = new Date(now.getFullYear() - 1, now.getMonth() + 1, 1);
     else if (timeRange === "ytd") startDate = new Date(now.getFullYear(), 0, 1);
     else if (timeRange === "fy") startDate = getFYStart(now);
-    else if (timeRange === "last24") startDate = new Date(now.getFullYear() - 2, now.getMonth(), 1);
+    else if (timeRange === "last24") startDate = new Date(now.getFullYear() - 2, now.getMonth() + 1, 1);
     else if (timeRange === "all") startDate = new Date(DATA_FLOOR);
     else startDate = new Date(DATA_FLOOR);
     // Enforce hard floor
@@ -375,9 +375,17 @@ export default function Dashboard() {
   }, [rawGifts, selectedFunds, timeRange, loaded]);
 
   // Add trend data to filteredData + compute trend %
+  // Exclude the current (incomplete) month from trend computation so it
+  // doesn't artificially drag the trendline down.
   const { chartData, trendPcts } = useMemo(() => {
     if (filteredData.length < 2) return { chartData: filteredData, trendPcts: {} };
-    let result = filteredData;
+    const now = new Date();
+    const currentMonthKey = getMonthKey(now);
+    // Separate completed months from the current (partial) month
+    const completedData = filteredData.filter(d => d._key !== currentMonthKey);
+    const currentMonth = filteredData.filter(d => d._key === currentMonthKey);
+    if (completedData.length < 2) return { chartData: filteredData, trendPcts: {} };
+    let result = completedData;
     const pcts = {};
     for (const f of selectedFunds) {
       const trend = computeTrend(result, f);
@@ -386,7 +394,9 @@ export default function Dashboard() {
         pcts[f] = trend.pct;
       }
     }
-    return { chartData: result, trendPcts: pcts };
+    // Append the current month back WITHOUT trend values so the main line
+    // still shows it but the trendline stops at last completed month.
+    return { chartData: [...result, ...currentMonth], trendPcts: pcts };
   }, [filteredData, selectedFunds]);
 
   const totals = useMemo(() => {
