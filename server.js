@@ -399,6 +399,23 @@ async function hybridFetch(permanentLinkUrl, fundFilter, res) {
     console.log("[hybrid] No LGL_API_KEY set, skipping API top-up");
   }
 
+  // --- TEMP DIAGNOSTIC: count April 2026 Offertory gifts ---
+  if (dateCol && amountCol && fundCol) {
+    let aprilCount = 0, aprilTotal = 0;
+    for (const row of rows) {
+      const f = String(row[fundCol] || "").trim().toLowerCase();
+      if (f !== "offertory") continue;
+      const dVal = row[dateCol];
+      const d = normalizeDateForDedup(dVal);
+      if (d.startsWith("2026-04")) {
+        aprilCount++;
+        aprilTotal += parseFloat(String(row[amountCol] || "0").replace(/[$,]/g, "")) || 0;
+      }
+    }
+    console.log(`[hybrid] DIAGNOSTIC: April 2026 Offertory = ${aprilCount} gifts, $${aprilTotal.toFixed(2)}`);
+  }
+  // --- END TEMP DIAGNOSTIC ---
+
   const result = {
     rows,
     reportDate,
