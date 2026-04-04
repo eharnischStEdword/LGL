@@ -164,6 +164,7 @@ export default function Dashboard() {
   const [rawGifts, setRawGifts] = useState([]);
   const [funds, setFunds] = useState([]);
   const [selectedFunds, setSelectedFunds] = useState(new Set());
+  const [showAllFundsTotal, setShowAllFundsTotal] = useState(false);
   const [timeRange, setTimeRange] = useState("last12");
   const [chartType, setChartType] = useState("line");
   const [colMapping, setColMapping] = useState({ dateCol: null, amountCol: null, fundCol: null });
@@ -361,6 +362,16 @@ export default function Dashboard() {
       if (!monthMap[mk][g.fund]) monthMap[mk][g.fund] = 0;
       monthMap[mk][g.fund] += g.amount;
     }
+    // Also compute grand total across ALL funds (not just selected) for "All Funds (Total)" line
+    const allFundsMonthMap = {};
+    if (showAllFundsTotal) {
+      const allRelevant = rawGifts.filter(g => g.date >= startDate && g.date <= now);
+      for (const g of allRelevant) {
+        const mk = getMonthKey(g.date);
+        if (!allFundsMonthMap[mk]) allFundsMonthMap[mk] = 0;
+        allFundsMonthMap[mk] += g.amount;
+      }
+    }
     const allMonths = new Set();
     let cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
     while (cursor <= now) {
@@ -370,9 +381,10 @@ export default function Dashboard() {
     return [...allMonths].sort().map(mk => {
       const row = { month: getMonthLabel(mk), _key: mk };
       for (const f of selectedFunds) row[f] = monthMap[mk]?.[f] || 0;
+      if (showAllFundsTotal) row["All Funds (Total)"] = allFundsMonthMap[mk] || 0;
       return row;
     });
-  }, [rawGifts, selectedFunds, timeRange, loaded]);
+  }, [rawGifts, selectedFunds, timeRange, loaded, showAllFundsTotal]);
 
   // Add trend data to filteredData + compute trend %
   // Exclude the current (incomplete) month from trend computation so it
@@ -403,8 +415,9 @@ export default function Dashboard() {
     if (!loaded) return {};
     const t = {};
     for (const f of selectedFunds) t[f] = filteredData.reduce((sum, row) => sum + (row[f] || 0), 0);
+    if (showAllFundsTotal) t["All Funds (Total)"] = filteredData.reduce((sum, row) => sum + (row["All Funds (Total)"] || 0), 0);
     return t;
-  }, [filteredData, selectedFunds, loaded]);
+  }, [filteredData, selectedFunds, loaded, showAllFundsTotal]);
 
   // ─── YoY comparison data (calendar year: 2025 vs 2026) ───
   const yoyData = useMemo(() => {
@@ -511,7 +524,10 @@ export default function Dashboard() {
     yoyColorMap[`${fund} (2026)`] = base;
   }
 
+  const ALL_FUNDS_TOTAL_KEY = "All Funds (Total)";
+  const ALL_FUNDS_TOTAL_COLOR = "#333333";
   const activeFunds = [...selectedFunds].sort();
+  if (showAllFundsTotal) fundColorMap[ALL_FUNDS_TOTAL_KEY] = ALL_FUNDS_TOTAL_COLOR;
 
   // ─── UPLOAD SCREEN ───
   if (!loaded) {
@@ -750,6 +766,20 @@ export default function Dashboard() {
               </div>
             </div>
           ))}
+          {showAllFundsTotal && (
+            <div style={{
+              padding: "10px 18px", background: "#fff",
+              border: `1px solid ${ALL_FUNDS_TOTAL_COLOR}25`,
+              borderLeft: `4px solid ${ALL_FUNDS_TOTAL_COLOR}`,
+              borderRadius: 6, minWidth: 150,
+              boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
+            }}>
+              <div style={{ fontSize: 16, color: "#888", marginBottom: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>All Funds (Total)</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif }}>
+                {fmtFull(totals[ALL_FUNDS_TOTAL_KEY] || 0)}
+              </div>
+            </div>
+          )}
         </div>
       )}
       {/* YoY Totals */}
@@ -844,6 +874,11 @@ export default function Dashboard() {
                       <LabelList content={<DataLabel />} />
                     </Line>
                   ))}
+                  {showAllFundsTotal && (
+                    <Line key={ALL_FUNDS_TOTAL_KEY} type="monotone" dataKey={ALL_FUNDS_TOTAL_KEY} stroke={ALL_FUNDS_TOTAL_COLOR} strokeWidth={3} dot={{ r: 4, fill: ALL_FUNDS_TOTAL_COLOR }} activeDot={{ r: 6 }}>
+                      <LabelList content={<DataLabel />} />
+                    </Line>
+                  )}
                   {/* Trend lines */}
                   {activeFunds.map(f => (
                     <Line
@@ -872,6 +907,11 @@ export default function Dashboard() {
                       <LabelList content={<DataLabel />} />
                     </Bar>
                   ))}
+                  {showAllFundsTotal && (
+                    <Bar key={ALL_FUNDS_TOTAL_KEY} dataKey={ALL_FUNDS_TOTAL_KEY} fill={ALL_FUNDS_TOTAL_COLOR} radius={[3, 3, 0, 0]} opacity={0.88}>
+                      <LabelList content={<DataLabel />} />
+                    </Bar>
+                  )}
                 </BarChart>
               )}
             </ResponsiveContainer>
@@ -960,6 +1000,25 @@ export default function Dashboard() {
               </button>
             );
           })}
+          <button
+            onClick={() => setShowAllFundsTotal(prev => !prev)}
+            style={{
+              display: "flex", alignItems: "center", gap: 7,
+              padding: "5px 13px", borderRadius: 6,
+              border: showAllFundsTotal ? `2px solid ${ALL_FUNDS_TOTAL_COLOR}` : "1px solid #ddd",
+              background: showAllFundsTotal ? `${ALL_FUNDS_TOTAL_COLOR}10` : "#fafafa",
+              color: showAllFundsTotal ? SE_GREEN_DARK : "#999",
+              fontSize: 16, fontWeight: showAllFundsTotal ? 600 : 400,
+              cursor: "pointer", transition: "all 0.15s"
+            }}
+          >
+            <span style={{
+              width: 10, height: 10, borderRadius: 3,
+              background: showAllFundsTotal ? ALL_FUNDS_TOTAL_COLOR : "#ddd",
+              transition: "all 0.15s"
+            }} />
+            All Funds (Total)
+          </button>
         </div>
       </div>
 
