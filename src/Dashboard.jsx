@@ -30,7 +30,7 @@ const FUND_COLORS = [
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const FY_START_MONTH = 7; // July
-const DATA_FLOOR = new Date(2025, 0, 1); // January 1, 2025 — nothing before this
+const DATA_FLOOR = new Date(2019, 6, 1); // July 1, 2019 — start of historical data
 
 // Proxied through our server to avoid CORS issues
 const LGL_OFFERTORY_ENDPOINT = "/api/lgl-data-hybrid";
@@ -148,13 +148,15 @@ function computeTrend(data, key) {
 }
 
 // Custom label for data points
-const DataLabel = ({ x, y, width, value }) => {
+// offset: optional vertical nudge (positive = down, negative = up) to avoid overlap
+const DataLabel = ({ x, y, width, value, offset: labelOffset }) => {
   if (!value || value === 0) return null;
   const label = value >= 1000 ? `$${(value/1000).toFixed(1)}k` : `$${value.toFixed(0)}`;
   // For bars, Recharts passes width — center the label over the bar
   const cx = width != null ? x + width / 2 : x;
+  const yPos = y - 12 + (labelOffset || 0);
   return (
-    <text x={cx} y={y - 12} textAnchor="middle" fill="#555" fontSize={16} fontFamily={sans}>
+    <text x={cx} y={yPos} textAnchor="middle" fill="#555" fontSize={16} fontFamily={sans}>
       {label}
     </text>
   );
@@ -165,6 +167,7 @@ export default function Dashboard() {
   const [funds, setFunds] = useState([]);
   const [selectedFunds, setSelectedFunds] = useState(new Set());
   const [showAllFundsTotal, setShowAllFundsTotal] = useState(false);
+  const [viewMode, setViewMode] = useState("chart"); // "chart" | "table"
   const [timeRange, setTimeRange] = useState("last12");
   const [chartType, setChartType] = useState("line");
   const [colMapping, setColMapping] = useState({ dateCol: null, amountCol: null, fundCol: null });
@@ -343,7 +346,7 @@ export default function Dashboard() {
 
 
   const filteredData = useMemo(() => {
-    if (!loaded || rawGifts.length === 0 || timeRange === "yoy") return [];
+    if (!loaded || rawGifts.length === 0 || timeRange === "yoy" || timeRange === "fyCompare") return [];
     const now = new Date();
     let startDate;
     if (timeRange === "last12") startDate = new Date(now.getFullYear() - 1, now.getMonth() + 1, 1);
@@ -423,7 +426,7 @@ export default function Dashboard() {
   const yoyData = useMemo(() => {
     if (!loaded || rawGifts.length === 0 || timeRange !== "yoy") return [];
     const now = new Date();
-    const calYears = [2025, 2026];
+    const calYears = [2024, 2025, 2026];
     const currentMonth = now.getMonth(); // 0-11
 
     const rows = MONTHS.map((label, monthIdx) => {
@@ -454,6 +457,7 @@ export default function Dashboard() {
     if (timeRange !== "yoy") return [];
     const keys = [];
     for (const fund of [...selectedFunds].sort()) {
+      keys.push(`${fund} (2024)`);
       keys.push(`${fund} (2025)`);
       keys.push(`${fund} (2026)`);
     }
@@ -468,6 +472,166 @@ export default function Dashboard() {
     }
     return t;
   }, [yoyData, yoySeriesKeys, timeRange]);
+
+  // ─── FY Compare data (fiscal year: Jul–Jun, last 3 FYs) ───
+  const FY_MONTHS = ["Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"];
+
+  const fyCompareData = useMemo(() => {
+    if (!loaded || rawGifts.length === 0 || timeRange !== "fyCompare") return [];
+    const now = new Date();
+    // Determine current FY start year (FY starts in July)
+    const currentFYStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+    // Last 3 fiscal years: e.g. FY23-24, FY24-25, FY25-26
+    const fyStartYears = [currentFYStart - 2, currentFYStart - 1, currentFYStart];
+
+    const rows = FY_MONTHS.map((label, monthIdx) => {
+      // FY month index: 0=Jul(6), 1=Aug(7), ..., 5=Dec(11), 6=Jan(0), ..., 11=Jun(5)
+      const calMonth = (monthIdx + 6) % 12;
+      const row = { month: label };
+      for (const fyStart of fyStartYears) {
+        // Calendar year for this month
+        const calYear = calMonth >= 6 ? fyStart : fyStart + 1;
+        // Skip future months in current FY
+        const monthDate = new Date(calYear, calMonth, 1);
+        if (monthDate > now) { row._future = true; break; }
+        const fyLabel = `FY${String(fyStart).slice(2)}-${String(fyStart + 1).slice(2)}`;
+        for (const fund of selectedFunds) {
+          const key = `${fund} (${fyLabel})`;
+          let total = 0;
+          for (const g of rawGifts) {
+            if (g.fund === fund
+              && g.date.getMonth() === calMonth
+              && g.date.getFullYear() === calYear
+              && g.date <= now) {
+              total += g.amount;
+            }
+          }
+          row[key] = total;
+        }
+      }
+      if (row._future) return null;
+      return row;
+    }).filter(Boolean);
+    return rows;
+  }, [rawGifts, selectedFunds, timeRange, loaded]);
+
+  const fyCompareSeriesKeys = useMemo(() => {
+    if (timeRange !== "fyCompare") return [];
+    const now = new Date();
+    const currentFYStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+    const fyStartYears = [currentFYStart - 2, currentFYStart - 1, currentFYStart];
+    const keys = [];
+    for (const fund of [...selectedFunds].sort()) {
+      for (const fyStart of fyStartYears) {
+        const fyLabel = `FY${String(fyStart).slice(2)}-${String(fyStart + 1).slice(2)}`;
+        keys.push(`${fund} (${fyLabel})`);
+      }
+    }
+    return keys;
+  }, [selectedFunds, timeRange]);
+
+  const fyCompareColorMap = useMemo(() => {
+    const map = {};
+    const now = new Date();
+    const currentFYStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+    const fyStartYears = [currentFYStart - 2, currentFYStart - 1, currentFYStart];
+    for (const fund of funds) {
+      const base = fundColorMap[fund];
+      const fyLabel0 = `FY${String(fyStartYears[0]).slice(2)}-${String(fyStartYears[0] + 1).slice(2)}`;
+      const fyLabel1 = `FY${String(fyStartYears[1]).slice(2)}-${String(fyStartYears[1] + 1).slice(2)}`;
+      const fyLabel2 = `FY${String(fyStartYears[2]).slice(2)}-${String(fyStartYears[2] + 1).slice(2)}`;
+      map[`${fund} (${fyLabel0})`] = "#999999";
+      map[`${fund} (${fyLabel1})`] = base;
+      map[`${fund} (${fyLabel2})`] = base;
+    }
+    return map;
+  }, [funds, fundColorMap]);
+
+  const fyCompareTotals = useMemo(() => {
+    if (timeRange !== "fyCompare" || fyCompareData.length === 0) return {};
+    const t = {};
+    for (const key of fyCompareSeriesKeys) {
+      t[key] = fyCompareData.reduce((sum, row) => sum + (row[key] || 0), 0);
+    }
+    return t;
+  }, [fyCompareData, fyCompareSeriesKeys, timeRange]);
+
+  // ─── Table view data ───
+  const [tableMode, setTableMode] = useState("fy"); // "fy" | "cy"
+
+  const tableData = useMemo(() => {
+    if (!loaded || rawGifts.length === 0 || viewMode !== "table") return [];
+    const now = new Date();
+
+    if (tableMode === "fy") {
+      // Fiscal years: Jul-Jun, from FY19-20 through current
+      const currentFYStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+      const rows = [];
+      for (let fyStart = currentFYStart; fyStart >= 2019; fyStart--) {
+        const fyLabel = `FY${String(fyStart).slice(2)}-${String(fyStart + 1).slice(2)}`;
+        const row = { label: fyLabel };
+        let grandTotal = 0;
+        let monthCount = 0;
+        for (let mi = 0; mi < 12; mi++) {
+          const calMonth = (mi + 6) % 12; // Jul=6, Aug=7, ..., Jun=5
+          const calYear = calMonth >= 6 ? fyStart : fyStart + 1;
+          const monthDate = new Date(calYear, calMonth, 1);
+          if (monthDate > now) continue; // skip future months
+          const monthKey = FY_MONTHS[mi];
+          let monthTotal = 0;
+          for (const g of rawGifts) {
+            if (selectedFunds.has(g.fund)
+              && g.date.getMonth() === calMonth
+              && g.date.getFullYear() === calYear
+              && g.date <= now) {
+              monthTotal += g.amount;
+            }
+          }
+          row[monthKey] = monthTotal;
+          grandTotal += monthTotal;
+          monthCount++;
+        }
+        row.total = grandTotal;
+        row.avg = monthCount > 0 ? grandTotal / monthCount : 0;
+        row.months = monthCount;
+        rows.push(row);
+      }
+      return rows;
+    } else {
+      // Calendar years: Jan-Dec
+      const currentYear = now.getFullYear();
+      const rows = [];
+      for (let yr = currentYear; yr >= 2019; yr--) {
+        const row = { label: String(yr) };
+        let grandTotal = 0;
+        let monthCount = 0;
+        for (let m = 0; m < 12; m++) {
+          const monthDate = new Date(yr, m, 1);
+          if (monthDate > now) continue;
+          // Check if we have data before DATA_FLOOR
+          if (monthDate < DATA_FLOOR) continue;
+          const monthKey = MONTHS[m];
+          let monthTotal = 0;
+          for (const g of rawGifts) {
+            if (selectedFunds.has(g.fund)
+              && g.date.getMonth() === m
+              && g.date.getFullYear() === yr
+              && g.date <= now) {
+              monthTotal += g.amount;
+            }
+          }
+          row[monthKey] = monthTotal;
+          grandTotal += monthTotal;
+          monthCount++;
+        }
+        row.total = grandTotal;
+        row.avg = monthCount > 0 ? grandTotal / monthCount : 0;
+        row.months = monthCount;
+        if (monthCount > 0) rows.push(row);
+      }
+      return rows;
+    }
+  }, [rawGifts, selectedFunds, loaded, viewMode, tableMode]);
 
   const toggleFund = (fund) => {
     setSelectedFunds(prev => {
@@ -516,10 +680,11 @@ export default function Dashboard() {
   const fundColorMap = {};
   funds.forEach((f, i) => { fundColorMap[f] = FUND_COLORS[i % FUND_COLORS.length]; });
 
-  // YoY colors
+  // YoY colors — 2024 lighter, 2025 medium, 2026 full
   const yoyColorMap = {};
   for (const fund of funds) {
     const base = fundColorMap[fund];
+    yoyColorMap[`${fund} (2024)`] = "#999999";
     yoyColorMap[`${fund} (2025)`] = base;
     yoyColorMap[`${fund} (2026)`] = base;
   }
@@ -712,8 +877,9 @@ export default function Dashboard() {
           { key: "fy", label: getFYLabel() },
           { key: "ytd", label: "YTD" },
           { key: "last12", label: "Last 12 Mo" },
-          { key: "all", label: "All (Since Jan '25)" },
-          { key: "yoy", label: "YoY Compare" }
+          { key: "all", label: "All (Since Jul '19)" },
+          { key: "yoy", label: "YoY Compare" },
+          { key: "fyCompare", label: "FY Compare" }
         ].map(({ key, label }) => (
           <button
             key={key}
@@ -731,7 +897,23 @@ export default function Dashboard() {
           </button>
         ))}
         <div style={{ flex: 1 }} />
-        {["line", "bar"].map(t => (
+        {["chart", "table"].map(vm => (
+          <button
+            key={vm}
+            onClick={() => setViewMode(vm)}
+            style={{
+              padding: "9px 18px", borderRadius: 6,
+              border: viewMode === vm ? `2px solid ${SE_BLUE}` : "1px solid #ccc",
+              background: viewMode === vm ? `${SE_BLUE}12` : "#fff",
+              color: viewMode === vm ? SE_BLUE : "#999",
+              fontSize: 16, fontWeight: viewMode === vm ? 700 : 500,
+              cursor: "pointer"
+            }}
+          >
+            {vm === "chart" ? "Chart" : "Table"}
+          </button>
+        ))}
+        {viewMode === "chart" && ["line", "bar"].map(t => (
           <button
             key={t}
             onClick={() => setChartType(t)}
@@ -750,7 +932,7 @@ export default function Dashboard() {
       </div>
 
       {/* Totals */}
-      {activeFunds.length > 0 && timeRange !== "yoy" && (
+      {activeFunds.length > 0 && timeRange !== "yoy" && timeRange !== "fyCompare" && (
         <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
           {activeFunds.map(f => (
             <div key={f} style={{
@@ -802,13 +984,168 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* FY Compare Totals */}
+      {activeFunds.length > 0 && timeRange === "fyCompare" && (
+        <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
+          {fyCompareSeriesKeys.map(key => (
+            <div key={key} style={{
+              padding: "10px 18px", background: "#fff",
+              border: `1px solid ${fyCompareColorMap[key] || SE_GREEN}25`,
+              borderLeft: `4px solid ${fyCompareColorMap[key] || SE_GREEN}`,
+              borderRadius: 6, minWidth: 150,
+              boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
+            }}>
+              <div style={{ fontSize: 16, color: "#888", marginBottom: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{key}</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif }}>
+                {fmtFull(fyCompareTotals[key] || 0)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Table View */}
+      {viewMode === "table" && (
+        <div style={{
+          background: "#fff", border: `1px solid ${SE_GREEN}12`,
+          borderRadius: 8, padding: "18px 14px 10px",
+          marginBottom: 18, boxShadow: "0 1px 4px rgba(0,89,33,0.04)"
+        }}>
+          {/* FY / CY toggle */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            {[{ key: "fy", label: "Fiscal Year (Jul–Jun)" }, { key: "cy", label: "Calendar Year (Jan–Dec)" }].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setTableMode(key)}
+                style={{
+                  padding: "7px 16px", borderRadius: 6,
+                  border: tableMode === key ? `2px solid ${SE_GREEN}` : "1px solid #ccc",
+                  background: tableMode === key ? `${SE_GREEN}12` : "#fff",
+                  color: tableMode === key ? SE_GREEN_DARK : "#777",
+                  fontSize: 15, fontWeight: tableMode === key ? 700 : 500,
+                  cursor: "pointer"
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {tableData.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 60, color: "#aaa", fontSize: 16 }}>
+              {activeFunds.length === 0 ? "Select at least one fund below." : "No data available."}
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 15, fontFamily: sans }}>
+                <thead>
+                  <tr style={{ borderBottom: `2px solid ${SE_GREEN}30` }}>
+                    <th style={{ textAlign: "left", padding: "8px 10px", color: SE_GREEN_DARK, fontWeight: 700, position: "sticky", left: 0, background: "#fff", minWidth: 80 }}>
+                      {tableMode === "fy" ? "FY" : "Year"}
+                    </th>
+                    {(tableMode === "fy" ? FY_MONTHS : MONTHS).map(m => (
+                      <th key={m} style={{ textAlign: "right", padding: "8px 8px", color: "#666", fontWeight: 600, minWidth: 75 }}>{m}</th>
+                    ))}
+                    <th style={{ textAlign: "right", padding: "8px 10px", color: SE_GREEN_DARK, fontWeight: 700, minWidth: 95, borderLeft: `2px solid ${SE_GREEN}20` }}>Total</th>
+                    <th style={{ textAlign: "right", padding: "8px 10px", color: SE_GREEN_DARK, fontWeight: 700, minWidth: 95 }}>Mo. Avg</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tableData.map((row, ri) => (
+                    <tr key={row.label} style={{ borderBottom: `1px solid ${SE_GREEN}10`, background: ri % 2 === 0 ? "#fafafa" : "#fff" }}>
+                      <td style={{ padding: "8px 10px", fontWeight: 700, color: SE_GREEN_DARK, position: "sticky", left: 0, background: ri % 2 === 0 ? "#fafafa" : "#fff" }}>{row.label}</td>
+                      {(tableMode === "fy" ? FY_MONTHS : MONTHS).map(m => (
+                        <td key={m} style={{ textAlign: "right", padding: "8px 8px", color: row[m] ? "#333" : "#ccc" }}>
+                          {row[m] != null ? fmtFull(row[m]) : "—"}
+                        </td>
+                      ))}
+                      <td style={{ textAlign: "right", padding: "8px 10px", fontWeight: 700, color: SE_GREEN_DARK, borderLeft: `2px solid ${SE_GREEN}20` }}>
+                        {fmtFull(row.total)}
+                      </td>
+                      <td style={{ textAlign: "right", padding: "8px 10px", fontWeight: 600, color: "#555" }}>
+                        {fmtFull(row.avg)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Chart */}
-      <div style={{
+      {viewMode === "chart" && <div style={{
         background: "#fff", border: `1px solid ${SE_GREEN}12`,
         borderRadius: 8, padding: "18px 14px 10px",
         marginBottom: 18, boxShadow: "0 1px 4px rgba(0,89,33,0.04)"
       }}>
-        {(timeRange === "yoy") ? (
+        {(timeRange === "fyCompare") ? (
+          /* ─── FY Compare Chart ─── */
+          fyCompareData.length === 0 || activeFunds.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 60, color: "#aaa", fontSize: 16 }}>
+              {activeFunds.length === 0 ? "Select at least one fund below." : "No data for FY comparison."}
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={370}>
+              {chartType === "line" ? (
+                <LineChart data={fyCompareData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}10`} />
+                  <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <YAxis tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
+                  {fyCompareSeriesKeys.map(key => {
+                    const parts = key.match(/\(FY(\d{2})-(\d{2})\)/);
+                    const fyIdx = parts ? parseInt(parts[1]) : 0;
+                    const now = new Date();
+                    const currentFYStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+                    const currentFYShort = currentFYStart % 100;
+                    const isOldest = fyIdx === (currentFYShort - 2);
+                    const isMiddle = fyIdx === (currentFYShort - 1);
+                    const labelOffset = isOldest ? -20 : isMiddle ? -2 : 18;
+                    return (
+                      <Line
+                        key={key}
+                        type="monotone"
+                        dataKey={key}
+                        stroke={fyCompareColorMap[key]}
+                        strokeWidth={isOldest ? 1.5 : isMiddle ? 2 : 2.5}
+                        strokeDasharray={isOldest ? "3 3" : isMiddle ? "6 3" : undefined}
+                        dot={{ r: isOldest ? 2 : 3, fill: fyCompareColorMap[key] }}
+                        activeDot={{ r: 5 }}
+                        opacity={isOldest ? 0.6 : 1}
+                      >
+                        <LabelList content={<DataLabel offset={labelOffset} />} />
+                      </Line>
+                    );
+                  })}
+                </LineChart>
+              ) : (
+                <BarChart data={fyCompareData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}10`} />
+                  <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <YAxis tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
+                  {fyCompareSeriesKeys.map(key => {
+                    const parts = key.match(/\(FY(\d{2})-(\d{2})\)/);
+                    const fyIdx = parts ? parseInt(parts[1]) : 0;
+                    const now = new Date();
+                    const currentFYStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+                    const currentFYShort = currentFYStart % 100;
+                    const isOldest = fyIdx === (currentFYShort - 2);
+                    const isMiddle = fyIdx === (currentFYShort - 1);
+                    return (
+                      <Bar key={key} dataKey={key} fill={fyCompareColorMap[key]} radius={[3, 3, 0, 0]} opacity={isOldest ? 0.35 : isMiddle ? 0.5 : 0.88}>
+                        <LabelList content={<DataLabel />} />
+                      </Bar>
+                    );
+                  })}
+                </BarChart>
+              )}
+            </ResponsiveContainer>
+          )
+        ) : (timeRange === "yoy") ? (
           /* ─── YoY / FY YoY Chart ─── */
           yoyData.length === 0 || activeFunds.length === 0 ? (
             <div style={{ textAlign: "center", padding: 60, color: "#aaa", fontSize: 16 }}>
@@ -823,20 +1160,27 @@ export default function Dashboard() {
                   <YAxis tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
-                  {yoySeriesKeys.map(key => (
-                    <Line
-                      key={key}
-                      type="monotone"
-                      dataKey={key}
-                      stroke={yoyColorMap[key]}
-                      strokeWidth={key.includes("(2025)") ? 2 : 2.5}
-                      strokeDasharray={key.includes("(2025)") ? "6 3" : undefined}
-                      dot={{ r: 3, fill: yoyColorMap[key] }}
-                      activeDot={{ r: 5 }}
-                    >
-                      <LabelList content={<DataLabel />} />
-                    </Line>
-                  ))}
+                  {yoySeriesKeys.map(key => {
+                    const is2024 = key.includes("(2024)");
+                    const is2025 = key.includes("(2025)");
+                    // Offset labels to avoid overlap: 2024 up, 2025 middle, 2026 down
+                    const labelOffset = is2024 ? -20 : is2025 ? -2 : 18;
+                    return (
+                      <Line
+                        key={key}
+                        type="monotone"
+                        dataKey={key}
+                        stroke={yoyColorMap[key]}
+                        strokeWidth={is2024 ? 1.5 : is2025 ? 2 : 2.5}
+                        strokeDasharray={is2024 ? "3 3" : is2025 ? "6 3" : undefined}
+                        dot={{ r: is2024 ? 2 : 3, fill: yoyColorMap[key] }}
+                        activeDot={{ r: 5 }}
+                        opacity={is2024 ? 0.6 : 1}
+                      >
+                        <LabelList content={<DataLabel offset={labelOffset} />} />
+                      </Line>
+                    );
+                  })}
                 </LineChart>
               ) : (
                 <BarChart data={yoyData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
@@ -846,7 +1190,7 @@ export default function Dashboard() {
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
                   {yoySeriesKeys.map(key => (
-                    <Bar key={key} dataKey={key} fill={yoyColorMap[key]} radius={[3, 3, 0, 0]} opacity={key.includes("(2025)") ? 0.5 : 0.88}>
+                    <Bar key={key} dataKey={key} fill={yoyColorMap[key]} radius={[3, 3, 0, 0]} opacity={key.includes("(2024)") ? 0.35 : key.includes("(2025)") ? 0.5 : 0.88}>
                       <LabelList content={<DataLabel />} />
                     </Bar>
                   ))}
@@ -917,10 +1261,10 @@ export default function Dashboard() {
             </ResponsiveContainer>
           )
         )}
-      </div>
+      </div>}
 
       {/* Trend indicator */}
-      {timeRange !== "yoy" && Object.keys(trendPcts).length > 0 && (
+      {viewMode === "chart" && timeRange !== "yoy" && timeRange !== "fyCompare" && Object.keys(trendPcts).length > 0 && (
         <div style={{
           display: "flex", gap: 12, marginBottom: 14, flexWrap: "wrap"
         }}>
