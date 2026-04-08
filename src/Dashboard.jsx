@@ -148,19 +148,33 @@ function computeTrend(data, key) {
 }
 
 // Custom label for data points
-// labelNudge: optional vertical nudge (positive = down, negative = up) to avoid overlap
-const DataLabel = ({ x, y, width, value, labelNudge }) => {
+const DataLabel = ({ x, y, width, value }) => {
   if (!value || value === 0) return null;
   const label = value >= 1000 ? `$${(value/1000).toFixed(1)}k` : `$${value.toFixed(0)}`;
-  // For bars, Recharts passes width — center the label over the bar
   const cx = width != null ? x + width / 2 : x;
-  const yPos = y - 12 + (labelNudge || 0);
   return (
-    <text x={cx} y={yPos} textAnchor="middle" fill="#555" fontSize={16} fontFamily={sans}>
+    <text x={cx} y={y - 12} textAnchor="middle" fill="#555" fontSize={16} fontFamily={sans}>
       {label}
     </text>
   );
 };
+// Factory for nudged labels (Recharts LabelList doesn't forward custom props)
+const makeNudgedLabel = (nudge) => {
+  const NudgedLabel = ({ x, y, width, value }) => {
+    if (!value || value === 0) return null;
+    const label = value >= 1000 ? `$${(value/1000).toFixed(1)}k` : `$${value.toFixed(0)}`;
+    const cx = width != null ? x + width / 2 : x;
+    return (
+      <text x={cx} y={y - 12 + nudge} textAnchor="middle" fill="#555" fontSize={14} fontFamily={sans}>
+        {label}
+      </text>
+    );
+  };
+  return NudgedLabel;
+};
+const LabelUp = makeNudgedLabel(-14);
+const LabelMid = makeNudgedLabel(0);
+const LabelDown = makeNudgedLabel(22);
 
 export default function Dashboard() {
   const [rawGifts, setRawGifts] = useState([]);
@@ -443,7 +457,7 @@ export default function Dashboard() {
   const yoyData = useMemo(() => {
     if (!loaded || rawGifts.length === 0 || timeRange !== "yoy") return [];
     const now = new Date();
-    const calYears = [2024, 2025, 2026];
+    const calYears = [2025, 2026];
     const currentMonth = now.getMonth(); // 0-11
 
     const rows = MONTHS.map((label, monthIdx) => {
@@ -465,7 +479,6 @@ export default function Dashboard() {
     if (timeRange !== "yoy") return [];
     const keys = [];
     for (const fund of [...selectedFunds].sort()) {
-      keys.push(`${fund} (2024)`);
       keys.push(`${fund} (2025)`);
       keys.push(`${fund} (2026)`);
     }
@@ -649,11 +662,10 @@ export default function Dashboard() {
   const fundColorMap = {};
   funds.forEach((f, i) => { fundColorMap[f] = FUND_COLORS[i % FUND_COLORS.length]; });
 
-  // YoY colors — 2024 lighter, 2025 medium, 2026 full
+  // YoY colors — 2025 dashed, 2026 solid
   const yoyColorMap = {};
   for (const fund of funds) {
     const base = fundColorMap[fund];
-    yoyColorMap[`${fund} (2024)`] = "#999999";
     yoyColorMap[`${fund} (2025)`] = base;
     yoyColorMap[`${fund} (2026)`] = base;
   }
@@ -1087,7 +1099,7 @@ export default function Dashboard() {
                     const currentFYShort = currentFYStart % 100;
                     const isOldest = fyIdx === (currentFYShort - 2);
                     const isMiddle = fyIdx === (currentFYShort - 1);
-                    const labelOffset = isOldest ? -20 : isMiddle ? -2 : 18;
+                    const LabelComp = isOldest ? LabelUp : isMiddle ? LabelMid : LabelDown;
                     return (
                       <Line
                         key={key}
@@ -1100,7 +1112,7 @@ export default function Dashboard() {
                         activeDot={{ r: 5 }}
                         opacity={isOldest ? 0.6 : 1}
                       >
-                        <LabelList content={<DataLabel labelNudge={labelOffset} />} />
+                        <LabelList content={<LabelComp />} />
                       </Line>
                     );
                   })}
@@ -1146,23 +1158,20 @@ export default function Dashboard() {
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
                   {yoySeriesKeys.map(key => {
-                    const is2024 = key.includes("(2024)");
                     const is2025 = key.includes("(2025)");
-                    // Offset labels to avoid overlap: 2024 up, 2025 middle, 2026 down
-                    const labelOffset = is2024 ? -20 : is2025 ? -2 : 18;
+                    const LabelComp = is2025 ? LabelUp : LabelDown;
                     return (
                       <Line
                         key={key}
                         type="monotone"
                         dataKey={key}
                         stroke={yoyColorMap[key]}
-                        strokeWidth={is2024 ? 1.5 : is2025 ? 2 : 2.5}
-                        strokeDasharray={is2024 ? "3 3" : is2025 ? "6 3" : undefined}
-                        dot={{ r: is2024 ? 2 : 3, fill: yoyColorMap[key] }}
+                        strokeWidth={is2025 ? 2 : 2.5}
+                        strokeDasharray={is2025 ? "6 3" : undefined}
+                        dot={{ r: 3, fill: yoyColorMap[key] }}
                         activeDot={{ r: 5 }}
-                        opacity={is2024 ? 0.6 : 1}
                       >
-                        <LabelList content={<DataLabel labelNudge={labelOffset} />} />
+                        <LabelList content={<LabelComp />} />
                       </Line>
                     );
                   })}
@@ -1175,7 +1184,7 @@ export default function Dashboard() {
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
                   {yoySeriesKeys.map(key => (
-                    <Bar key={key} dataKey={key} fill={yoyColorMap[key]} radius={[3, 3, 0, 0]} opacity={key.includes("(2024)") ? 0.35 : key.includes("(2025)") ? 0.5 : 0.88}>
+                    <Bar key={key} dataKey={key} fill={yoyColorMap[key]} radius={[3, 3, 0, 0]} opacity={key.includes("(2025)") ? 0.5 : 0.88}>
                       <LabelList content={<DataLabel />} />
                     </Bar>
                   ))}
