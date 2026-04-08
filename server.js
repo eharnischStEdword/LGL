@@ -464,8 +464,7 @@ app.get("/api/debug/april-summary", requireAuth, async (req, res) => {
     // 1. Query LGL API for ALL April 2026 gifts
     if (LGL_API_KEY) {
       const params = new URLSearchParams();
-      params.append("q[]", "received_from=2026-04-01");
-      params.append("q[]", "received_to=2026-04-30");
+      params.append("q[]", "updated_from=2026-04-01");
       params.append("limit", "100");
       let allApiGifts = [];
       let offset = 0;
@@ -488,16 +487,18 @@ app.get("/api/debug/april-summary", requireAuth, async (req, res) => {
         offset += 100;
       }
 
-      // Summarize by fund
+      // Filter to April received dates and summarize by fund
+      const aprilGifts = allApiGifts.filter(g => (g.received_date || "").startsWith("2026-04"));
       const byFund = {};
-      for (const g of allApiGifts) {
+      for (const g of aprilGifts) {
         const fund = g.fund_name || "(no fund)";
         if (!byFund[fund]) byFund[fund] = { count: 0, total: 0 };
         byFund[fund].count++;
         byFund[fund].total += parseFloat(g.received_amount || 0);
       }
       results.apiAprilGifts = {
-        totalGifts: allApiGifts.length,
+        totalGiftsUpdatedSinceApril1: allApiGifts.length,
+        totalWithAprilReceivedDate: aprilGifts.length,
         byFund: Object.fromEntries(
           Object.entries(byFund).sort((a, b) => b[1].total - a[1].total)
             .map(([fund, data]) => [fund, { count: data.count, total: `$${data.total.toFixed(2)}` }])
