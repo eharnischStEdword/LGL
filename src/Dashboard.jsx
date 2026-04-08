@@ -148,13 +148,13 @@ function computeTrend(data, key) {
 }
 
 // Custom label for data points
-// offset: optional vertical nudge (positive = down, negative = up) to avoid overlap
-const DataLabel = ({ x, y, width, value, offset: labelOffset }) => {
+// labelNudge: optional vertical nudge (positive = down, negative = up) to avoid overlap
+const DataLabel = ({ x, y, width, value, labelNudge }) => {
   if (!value || value === 0) return null;
   const label = value >= 1000 ? `$${(value/1000).toFixed(1)}k` : `$${value.toFixed(0)}`;
   // For bars, Recharts passes width — center the label over the bar
   const cx = width != null ? x + width / 2 : x;
-  const yPos = y - 12 + (labelOffset || 0);
+  const yPos = y - 12 + (labelNudge || 0);
   return (
     <text x={cx} y={yPos} textAnchor="middle" fill="#555" fontSize={16} fontFamily={sans}>
       {label}
@@ -346,6 +346,22 @@ export default function Dashboard() {
   }, []);
 
 
+  // Pre-computed gift index: fund|year|month → total amount
+  // Turns O(n×m) loops into O(1) lookups
+  const giftIndex = useMemo(() => {
+    const idx = {};
+    const allIdx = {}; // all funds combined
+    for (const g of rawGifts) {
+      const yr = g.date.getFullYear();
+      const mo = g.date.getMonth();
+      const fk = `${g.fund}|${yr}|${mo}`;
+      idx[fk] = (idx[fk] || 0) + g.amount;
+      const ak = `${yr}|${mo}`;
+      allIdx[ak] = (allIdx[ak] || 0) + g.amount;
+    }
+    return { byFund: idx, allFunds: allIdx };
+  }, [rawGifts]);
+
   const filteredData = useMemo(() => {
     if (!loaded || rawGifts.length === 0 || timeRange === "yoy" || timeRange === "fyCompare") return [];
     const now = new Date();
@@ -437,22 +453,13 @@ export default function Dashboard() {
       for (const yr of calYears) {
         for (const fund of selectedFunds) {
           const key = `${fund} (${yr})`;
-          let total = 0;
-          for (const g of rawGifts) {
-            if (g.fund === fund
-              && g.date.getMonth() === monthIdx
-              && g.date.getFullYear() === yr
-              && g.date <= now) {
-              total += g.amount;
-            }
-          }
-          row[key] = total;
+          row[key] = giftIndex.byFund[`${fund}|${yr}|${monthIdx}`] || 0;
         }
       }
       return row;
     }).filter(Boolean);
     return rows;
-  }, [rawGifts, selectedFunds, timeRange, loaded]);
+  }, [giftIndex, selectedFunds, timeRange, loaded]);
 
   const yoySeriesKeys = useMemo(() => {
     if (timeRange !== "yoy") return [];
@@ -488,33 +495,25 @@ export default function Dashboard() {
     const rows = FY_MONTHS.map((label, monthIdx) => {
       // FY month index: 0=Jul(6), 1=Aug(7), ..., 5=Dec(11), 6=Jan(0), ..., 11=Jun(5)
       const calMonth = (monthIdx + 6) % 12;
+      // Skip this month row entirely if even the oldest FY hasn't reached it yet
+      const oldestCalYear = calMonth >= 6 ? fyStartYears[0] : fyStartYears[0] + 1;
+      if (new Date(oldestCalYear, calMonth, 1) > now) return null;
       const row = { month: label };
       for (const fyStart of fyStartYears) {
-        // Calendar year for this month
         const calYear = calMonth >= 6 ? fyStart : fyStart + 1;
-        // Skip future months in current FY
         const monthDate = new Date(calYear, calMonth, 1);
-        if (monthDate > now) { row._future = true; break; }
         const fyLabel = `FY${String(fyStart).slice(2)}-${String(fyStart + 1).slice(2)}`;
         for (const fund of selectedFunds) {
           const key = `${fund} (${fyLabel})`;
-          let total = 0;
-          for (const g of rawGifts) {
-            if (g.fund === fund
-              && g.date.getMonth() === calMonth
-              && g.date.getFullYear() === calYear
-              && g.date <= now) {
-              total += g.amount;
-            }
-          }
-          row[key] = total;
+          // Skip future months but don't break — other FYs may have data
+          if (monthDate > now) { row[key] = 0; continue; }
+          row[key] = giftIndex.byFund[`${fund}|${calYear}|${calMonth}`] || 0;
         }
       }
-      if (row._future) return null;
       return row;
     }).filter(Boolean);
     return rows;
-  }, [rawGifts, selectedFunds, timeRange, loaded]);
+  }, [giftIndex, selectedFunds, timeRange, loaded]);
 
   const fyCompareSeriesKeys = useMemo(() => {
     if (timeRange !== "fyCompare") return [];
@@ -547,8 +546,16 @@ export default function Dashboard() {
     if (!loaded || rawGifts.length === 0 || viewMode !== "table") return [];
     const now = new Date();
 
+    // Sum gift index entries for selected funds at a given year/month
+    const sumSelected = (yr, mo) => {
+      let total = 0;
+      for (const f of selectedFunds) {
+        total += giftIndex.byFund[`${f}|${yr}|${mo}`] || 0;
+      }
+      return total;
+    };
+
     if (tableMode === "fy") {
-      // Fiscal years: Jul-Jun, from FY19-20 through current
       const currentFYStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
       const rows = [];
       for (let fyStart = currentFYStart; fyStart >= 2019; fyStart--) {
@@ -557,21 +564,11 @@ export default function Dashboard() {
         let grandTotal = 0;
         let monthCount = 0;
         for (let mi = 0; mi < 12; mi++) {
-          const calMonth = (mi + 6) % 12; // Jul=6, Aug=7, ..., Jun=5
+          const calMonth = (mi + 6) % 12;
           const calYear = calMonth >= 6 ? fyStart : fyStart + 1;
-          const monthDate = new Date(calYear, calMonth, 1);
-          if (monthDate > now) continue; // skip future months
-          const monthKey = FY_MONTHS[mi];
-          let monthTotal = 0;
-          for (const g of rawGifts) {
-            if (selectedFunds.has(g.fund)
-              && g.date.getMonth() === calMonth
-              && g.date.getFullYear() === calYear
-              && g.date <= now) {
-              monthTotal += g.amount;
-            }
-          }
-          row[monthKey] = monthTotal;
+          if (new Date(calYear, calMonth, 1) > now) continue;
+          const monthTotal = sumSelected(calYear, calMonth);
+          row[FY_MONTHS[mi]] = monthTotal;
           grandTotal += monthTotal;
           monthCount++;
         }
@@ -582,7 +579,6 @@ export default function Dashboard() {
       }
       return rows;
     } else {
-      // Calendar years: Jan-Dec
       const currentYear = now.getFullYear();
       const rows = [];
       for (let yr = currentYear; yr >= 2019; yr--) {
@@ -591,20 +587,9 @@ export default function Dashboard() {
         let monthCount = 0;
         for (let m = 0; m < 12; m++) {
           const monthDate = new Date(yr, m, 1);
-          if (monthDate > now) continue;
-          // Check if we have data before DATA_FLOOR
-          if (monthDate < DATA_FLOOR) continue;
-          const monthKey = MONTHS[m];
-          let monthTotal = 0;
-          for (const g of rawGifts) {
-            if (selectedFunds.has(g.fund)
-              && g.date.getMonth() === m
-              && g.date.getFullYear() === yr
-              && g.date <= now) {
-              monthTotal += g.amount;
-            }
-          }
-          row[monthKey] = monthTotal;
+          if (monthDate > now || monthDate < DATA_FLOOR) continue;
+          const monthTotal = sumSelected(yr, m);
+          row[MONTHS[m]] = monthTotal;
           grandTotal += monthTotal;
           monthCount++;
         }
@@ -615,7 +600,7 @@ export default function Dashboard() {
       }
       return rows;
     }
-  }, [rawGifts, selectedFunds, loaded, viewMode, tableMode]);
+  }, [giftIndex, selectedFunds, loaded, viewMode, tableMode]);
 
   const toggleFund = (fund) => {
     setSelectedFunds(prev => {
@@ -1115,7 +1100,7 @@ export default function Dashboard() {
                         activeDot={{ r: 5 }}
                         opacity={isOldest ? 0.6 : 1}
                       >
-                        <LabelList content={<DataLabel offset={labelOffset} />} />
+                        <LabelList content={<DataLabel labelNudge={labelOffset} />} />
                       </Line>
                     );
                   })}
@@ -1177,7 +1162,7 @@ export default function Dashboard() {
                         activeDot={{ r: 5 }}
                         opacity={is2024 ? 0.6 : 1}
                       >
-                        <LabelList content={<DataLabel offset={labelOffset} />} />
+                        <LabelList content={<DataLabel labelNudge={labelOffset} />} />
                       </Line>
                     );
                   })}
