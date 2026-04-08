@@ -168,6 +168,7 @@ export default function Dashboard() {
   const [selectedFunds, setSelectedFunds] = useState(new Set());
   const [showAllFundsTotal, setShowAllFundsTotal] = useState(false);
   const [viewMode, setViewMode] = useState("chart"); // "chart" | "table"
+  const [tableMode, setTableMode] = useState("fy"); // "fy" | "cy"
   const [timeRange, setTimeRange] = useState("last12");
   const [chartType, setChartType] = useState("line");
   const [colMapping, setColMapping] = useState({ dateCol: null, amountCol: null, fundCol: null });
@@ -530,22 +531,7 @@ export default function Dashboard() {
     return keys;
   }, [selectedFunds, timeRange]);
 
-  const fyCompareColorMap = useMemo(() => {
-    const map = {};
-    const now = new Date();
-    const currentFYStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
-    const fyStartYears = [currentFYStart - 2, currentFYStart - 1, currentFYStart];
-    for (const fund of funds) {
-      const base = fundColorMap[fund];
-      const fyLabel0 = `FY${String(fyStartYears[0]).slice(2)}-${String(fyStartYears[0] + 1).slice(2)}`;
-      const fyLabel1 = `FY${String(fyStartYears[1]).slice(2)}-${String(fyStartYears[1] + 1).slice(2)}`;
-      const fyLabel2 = `FY${String(fyStartYears[2]).slice(2)}-${String(fyStartYears[2] + 1).slice(2)}`;
-      map[`${fund} (${fyLabel0})`] = "#999999";
-      map[`${fund} (${fyLabel1})`] = base;
-      map[`${fund} (${fyLabel2})`] = base;
-    }
-    return map;
-  }, [funds, fundColorMap]);
+  // fyCompareColorMap is computed below, after fundColorMap is defined
 
   const fyCompareTotals = useMemo(() => {
     if (timeRange !== "fyCompare" || fyCompareData.length === 0) return {};
@@ -557,8 +543,6 @@ export default function Dashboard() {
   }, [fyCompareData, fyCompareSeriesKeys, timeRange]);
 
   // ─── Table view data ───
-  const [tableMode, setTableMode] = useState("fy"); // "fy" | "cy"
-
   const tableData = useMemo(() => {
     if (!loaded || rawGifts.length === 0 || viewMode !== "table") return [];
     const now = new Date();
@@ -688,6 +672,22 @@ export default function Dashboard() {
     yoyColorMap[`${fund} (2025)`] = base;
     yoyColorMap[`${fund} (2026)`] = base;
   }
+
+  // FY Compare colors — oldest gray, middle base, current base
+  const fyCompareColorMap = (() => {
+    const map = {};
+    const now = new Date();
+    const currentFYStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+    const fyStartYears = [currentFYStart - 2, currentFYStart - 1, currentFYStart];
+    for (const fund of funds) {
+      const base = fundColorMap[fund];
+      for (let i = 0; i < fyStartYears.length; i++) {
+        const fyLabel = `FY${String(fyStartYears[i]).slice(2)}-${String(fyStartYears[i] + 1).slice(2)}`;
+        map[`${fund} (${fyLabel})`] = i === 0 ? "#999999" : base;
+      }
+    }
+    return map;
+  })();
 
   const ALL_FUNDS_TOTAL_KEY = "All Funds (Total)";
   const ALL_FUNDS_TOTAL_COLOR = "#333333";
