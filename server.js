@@ -354,10 +354,11 @@ async function hybridFetch(permanentLinkUrl, fundFilter, res) {
   const buf = await resp.arrayBuffer();
   const ct = resp.headers.get("content-type") || "";
 
-  // 2. Extract report date from Content-Disposition filename
+  // 2. Extract report date from Content-Disposition filename, fallback to 60 days ago
   const cd = resp.headers.get("content-disposition") || "";
   const dateMatch = cd.match(/(\d{4}-\d{2}-\d{2})/);
-  const reportDate = dateMatch ? dateMatch[1] : null;
+  const fallbackDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const reportDate = dateMatch ? dateMatch[1] : fallbackDate;
 
   // 3. Parse spreadsheet into rows
   const rows = parseSpreadsheetServer(buf, ct);
@@ -369,8 +370,8 @@ async function hybridFetch(permanentLinkUrl, fundFilter, res) {
 
   let apiGiftsAdded = 0;
 
-  // 5. If we have the API key and a report date, fetch recent gifts
-  if (LGL_API_KEY && reportDate && dateCol && amountCol && fundCol) {
+  // 5. If we have the API key, fetch recent gifts to top up the permanent link data
+  if (LGL_API_KEY && dateCol && amountCol && fundCol) {
     try {
       const apiGifts = await fetchLGLApiGifts(reportDate, fundFilter);
       console.log(`[hybrid] API returned ${apiGifts.length} gifts since ${reportDate}`);
