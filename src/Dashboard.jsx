@@ -207,21 +207,16 @@ const DataLabel = ({ x, y, width, value }) => {
   );
 };
 
-// Collision-aware label for the standard chart (many data points)
-let _smartLabelPositions = [];
-function resetSmartLabels() { _smartLabelPositions = []; }
-const SmartDataLabel = ({ x, y, width, value }) => {
+// Smart label for the standard chart — shows every data point label
+// since Recharts handles positioning. Smaller font to reduce overlap.
+let _smartLabelCount = 0;
+function resetSmartLabels() { _smartLabelCount = 0; }
+const SmartDataLabel = ({ x, y, width, value, index }) => {
   if (!value || value === 0) return null;
   const cx = width != null ? x + width / 2 : x;
-  const cy = y - 10;
-  // Check collision with already-placed labels
-  for (const pos of _smartLabelPositions) {
-    if (Math.abs(cx - pos.x) < 40 && Math.abs(cy - pos.y) < 16) return null;
-  }
-  _smartLabelPositions.push({ x: cx, y: cy });
   const label = value >= 1000 ? `$${(value/1000).toFixed(1)}k` : `$${value.toFixed(0)}`;
   return (
-    <text x={cx} y={cy} textAnchor="middle" fill="#555" fontSize={12} fontFamily={sans}>
+    <text x={cx} y={y - 10} textAnchor="middle" fill="#555" fontSize={11} fontFamily={sans}>
       {label}
     </text>
   );
@@ -1377,6 +1372,8 @@ export default function Dashboard() {
                       <LabelList content={<SmartDataLabel />} />
                     </Line>
                   )}
+                  {/* Hidden line to activate right YAxis */}
+                  <Line yAxisId="right" dataKey={activeFunds[0] || ALL_FUNDS_TOTAL_KEY} stroke="transparent" dot={false} activeDot={false} legendType="none" />
                   {/* Trend lines */}
                   {activeFunds.map(f => (
                     <Line
@@ -1414,6 +1411,8 @@ export default function Dashboard() {
                       <LabelList content={<SmartDataLabel />} />
                     </Bar>
                   )}
+                  {/* Hidden bar to activate right YAxis */}
+                  <Bar yAxisId="right" dataKey={activeFunds[0] || ALL_FUNDS_TOTAL_KEY} fill="transparent" legendType="none" />
                 </BarChart>
               )}
             </ResponsiveContainer>
