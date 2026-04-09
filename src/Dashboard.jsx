@@ -490,6 +490,40 @@ export default function Dashboard() {
         allFundsMonthMap[mk] += g.amount;
       }
     }
+    // Backfill from HISTORICAL_MONTHLY for selected funds where live data is missing
+    for (const f of selectedFunds) {
+      const hist = HISTORICAL_MONTHLY[f];
+      if (!hist) continue;
+      for (const [ym, amount] of Object.entries(hist)) {
+        const [y, m] = ym.split("-").map(Number);
+        const monthDate = new Date(y, m - 1, 1);
+        if (monthDate < startDate || monthDate > now) continue;
+        const mk = ym;
+        if (!monthMap[mk]) monthMap[mk] = {};
+        if (!monthMap[mk][f]) monthMap[mk][f] = amount;
+      }
+    }
+    // Backfill All Funds total from historical
+    if (showAllFundsTotal) {
+      // Build a set of fund|YYYY-MM that already have live data
+      const liveFundMonths = new Set();
+      for (const g of rawGifts) {
+        if (g.date >= startDate && g.date <= now) {
+          liveFundMonths.add(`${g.fund}|${getMonthKey(g.date)}`);
+        }
+      }
+      for (const [fund, months] of Object.entries(HISTORICAL_MONTHLY)) {
+        for (const [ym, amount] of Object.entries(months)) {
+          const [y, m] = ym.split("-").map(Number);
+          const monthDate = new Date(y, m - 1, 1);
+          if (monthDate < startDate || monthDate > now) continue;
+          if (!liveFundMonths.has(`${fund}|${ym}`)) {
+            if (!allFundsMonthMap[ym]) allFundsMonthMap[ym] = 0;
+            allFundsMonthMap[ym] += amount;
+          }
+        }
+      }
+    }
     const allMonths = new Set();
     let cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
     while (cursor <= now) {
