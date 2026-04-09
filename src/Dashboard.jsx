@@ -1356,14 +1356,14 @@ export default function Dashboard() {
                 <LineChart data={chartData} margin={{ top: 20, right: 55, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}08`} horizontalFill={["#f8faf9", "transparent"]} fillOpacity={1} />
                   <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
-                  <YAxis yAxisId="left" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
-                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [100, "auto"] : [0, "auto"]} allowDataOverflow={false} />
-                  <YAxis yAxisId="right" orientation="right" tickFormatter={fmt} tick={{ fill: "#aaa", fontSize: 12, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}10` }} tickLine={false}
-                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [100, "auto"] : [0, "auto"]} allowDataOverflow={false} />
+                  <YAxis yAxisId="left" type="number" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
+                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [1, "auto"] : [0, "auto"]} allowDataOverflow={useLogScale} />
+                  <YAxis yAxisId="right" type="number" orientation="right" tickFormatter={fmt} tick={{ fill: "#aaa", fontSize: 12, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}10` }} tickLine={false}
+                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [1, "auto"] : [0, "auto"]} allowDataOverflow={useLogScale} />
                   <Tooltip content={<CustomTooltip />} />
                   {activeFunds.length <= 8 && <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />}
                   {activeFunds.map(f => (
-                    <Line key={f} yAxisId="left" type="monotone" dataKey={f} stroke={fundColorMap[f]} strokeWidth={2.5} dot={{ r: 3, fill: fundColorMap[f] }} activeDot={{ r: 5 }}>
+                    <Line key={f} yAxisId="left" type="monotone" dataKey={f} stroke={fundColorMap[f]} strokeWidth={2.5} dot={{ r: 3, fill: fundColorMap[f] }} activeDot={{ r: 5 }} connectNulls>
                       <LabelList content={<SmartDataLabel />} />
                     </Line>
                   ))}
@@ -1395,10 +1395,10 @@ export default function Dashboard() {
                 <BarChart data={chartData} margin={{ top: 20, right: 55, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}08`} horizontalFill={["#f8faf9", "transparent"]} fillOpacity={1} />
                   <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
-                  <YAxis yAxisId="left" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
-                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [100, "auto"] : [0, "auto"]} allowDataOverflow={false} />
-                  <YAxis yAxisId="right" orientation="right" tickFormatter={fmt} tick={{ fill: "#aaa", fontSize: 12, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}10` }} tickLine={false}
-                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [100, "auto"] : [0, "auto"]} allowDataOverflow={false} />
+                  <YAxis yAxisId="left" type="number" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
+                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [1, "auto"] : [0, "auto"]} allowDataOverflow={useLogScale} />
+                  <YAxis yAxisId="right" type="number" orientation="right" tickFormatter={fmt} tick={{ fill: "#aaa", fontSize: 12, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}10` }} tickLine={false}
+                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [1, "auto"] : [0, "auto"]} allowDataOverflow={useLogScale} />
                   <Tooltip content={<CustomTooltip />} />
                   {activeFunds.length <= 8 && <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />}
                   {activeFunds.map(f => (
