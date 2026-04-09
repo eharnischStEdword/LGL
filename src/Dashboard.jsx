@@ -1069,10 +1069,10 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Totals */}
+      {/* Totals — collapse when too many funds are selected */}
       {(activeFunds.length > 0 || showAllFundsTotal) && timeRange !== "yoy" && timeRange !== "fyCompare" && (
         <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
-          {activeFunds.map(f => (
+          {activeFunds.length <= 6 ? activeFunds.map(f => (
             <div key={f} style={{
               padding: "10px 18px", background: "#fff",
               border: `1px solid ${fundColorMap[f]}25`,
@@ -1085,7 +1085,20 @@ export default function Dashboard() {
                 {fmtFull(totals[f] || 0)}
               </div>
             </div>
-          ))}
+          )) : (
+            <div style={{
+              padding: "10px 18px", background: "#fff",
+              border: `1px solid ${SE_GREEN}25`,
+              borderLeft: `4px solid ${SE_GREEN}`,
+              borderRadius: 6,
+              boxShadow: "0 1px 3px rgba(0,0,0,0.04)"
+            }}>
+              <div style={{ fontSize: 16, color: "#888", marginBottom: 3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>{activeFunds.length} funds selected</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif }}>
+                {fmtFull(activeFunds.reduce((s, f) => s + (totals[f] || 0), 0))}
+              </div>
+            </div>
+          )}
           {showAllFundsTotal && (
             <div style={{
               padding: "10px 18px", background: "#fff",
@@ -1341,7 +1354,7 @@ export default function Dashboard() {
             </div>
           ) : (
             <><span style={{display:"none"}}>{(() => { resetSmartLabels(); return ""; })()}</span>
-            <ResponsiveContainer width="100%" height={370}>
+            <ResponsiveContainer width="100%" height={activeFunds.length > 8 ? 500 : 370}>
               {chartType === "line" ? (
                 <LineChart data={chartData} margin={{ top: 20, right: 55, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}08`} horizontalFill={["#f8faf9", "transparent"]} fillOpacity={1} />
@@ -1351,7 +1364,7 @@ export default function Dashboard() {
                   <YAxis yAxisId="right" orientation="right" tickFormatter={fmt} tick={{ fill: "#aaa", fontSize: 12, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}10` }} tickLine={false}
                     scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [100, "auto"] : [0, "auto"]} allowDataOverflow={false} />
                   <Tooltip content={<CustomTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
+                  {activeFunds.length <= 8 && <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />}
                   {activeFunds.map(f => (
                     <Line key={f} yAxisId="left" type="monotone" dataKey={f} stroke={fundColorMap[f]} strokeWidth={2.5} dot={{ r: 3, fill: fundColorMap[f] }} activeDot={{ r: 5 }}>
                       <LabelList content={<SmartDataLabel />} />
@@ -1388,7 +1401,7 @@ export default function Dashboard() {
                   <YAxis yAxisId="right" orientation="right" tickFormatter={fmt} tick={{ fill: "#aaa", fontSize: 12, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}10` }} tickLine={false}
                     scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [100, "auto"] : [0, "auto"]} allowDataOverflow={false} />
                   <Tooltip content={<CustomTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
+                  {activeFunds.length <= 8 && <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />}
                   {activeFunds.map(f => (
                     <Bar key={f} yAxisId="left" dataKey={f} fill={fundColorMap[f]} radius={[3, 3, 0, 0]} opacity={0.88}>
                       <LabelList content={<SmartDataLabel />} />
@@ -1411,8 +1424,8 @@ export default function Dashboard() {
         )}
       </div>}
 
-      {/* Trend indicator */}
-      {viewMode === "chart" && timeRange !== "yoy" && timeRange !== "fyCompare" && Object.keys(trendPcts).length > 0 && (
+      {/* Trend indicator — hide when too many funds to keep it readable */}
+      {viewMode === "chart" && timeRange !== "yoy" && timeRange !== "fyCompare" && activeFunds.length <= 6 && Object.keys(trendPcts).length > 0 && (
         <div style={{
           display: "flex", gap: 12, marginBottom: 14, flexWrap: "wrap"
         }}>
