@@ -147,13 +147,33 @@ function computeTrend(data, key) {
   return { data: trendData, pct };
 }
 
-// Custom label for data points
+// Custom label for data points (used by YoY and FY Compare charts — fewer points)
 const DataLabel = ({ x, y, width, value }) => {
   if (!value || value === 0) return null;
   const label = value >= 1000 ? `$${(value/1000).toFixed(1)}k` : `$${value.toFixed(0)}`;
   const cx = width != null ? x + width / 2 : x;
   return (
     <text x={cx} y={y - 12} textAnchor="middle" fill="#555" fontSize={16} fontFamily={sans}>
+      {label}
+    </text>
+  );
+};
+
+// Collision-aware label for the standard chart (many data points)
+let _smartLabelPositions = [];
+function resetSmartLabels() { _smartLabelPositions = []; }
+const SmartDataLabel = ({ x, y, width, value }) => {
+  if (!value || value === 0) return null;
+  const cx = width != null ? x + width / 2 : x;
+  const cy = y - 10;
+  // Check collision with already-placed labels
+  for (const pos of _smartLabelPositions) {
+    if (Math.abs(cx - pos.x) < 58 && Math.abs(cy - pos.y) < 20) return null;
+  }
+  _smartLabelPositions.push({ x: cx, y: cy });
+  const label = value >= 1000 ? `$${(value/1000).toFixed(1)}k` : `$${value.toFixed(0)}`;
+  return (
+    <text x={cx} y={cy} textAnchor="middle" fill="#555" fontSize={12} fontFamily={sans}>
       {label}
     </text>
   );
@@ -185,6 +205,7 @@ export default function Dashboard() {
   const [tableMode, setTableMode] = useState("fy"); // "fy" | "cy"
   const [timeRange, setTimeRange] = useState("last12");
   const [chartType, setChartType] = useState("line");
+  const [useLogScale, setUseLogScale] = useState(false);
   const [colMapping, setColMapping] = useState({ dateCol: null, amountCol: null, fundCol: null });
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(null);
@@ -910,26 +931,49 @@ export default function Dashboard() {
             {vm === "chart" ? "Chart" : "Table"}
           </button>
         ))}
-        {viewMode === "chart" && ["line", "bar"].map(t => (
+        {viewMode === "chart" && (
+          <div style={{
+            display: "flex", gap: 2, background: "#f0f0f0",
+            borderRadius: 6, padding: 2
+          }}>
+            {["line", "bar"].map(t => (
+              <button
+                key={t}
+                onClick={() => setChartType(t)}
+                style={{
+                  padding: "6px 14px", borderRadius: 4,
+                  border: "none",
+                  background: chartType === t ? "#fff" : "transparent",
+                  color: chartType === t ? SE_GREEN_DARK : "#999",
+                  fontSize: 14, fontWeight: chartType === t ? 700 : 500,
+                  cursor: "pointer",
+                  boxShadow: chartType === t ? "0 1px 3px rgba(0,0,0,0.1)" : "none"
+                }}
+              >
+                {t === "line" ? "Line" : "Bar"}
+              </button>
+            ))}
+          </div>
+        )}
+        {viewMode === "chart" && timeRange !== "yoy" && timeRange !== "fyCompare" && (
           <button
-            key={t}
-            onClick={() => setChartType(t)}
+            onClick={() => setUseLogScale(prev => !prev)}
             style={{
-              padding: "9px 18px", borderRadius: 6,
-              border: chartType === t ? `2px solid ${SE_GREEN}` : "1px solid #ccc",
-              background: chartType === t ? `${SE_GREEN}12` : "#fff",
-              color: chartType === t ? SE_GREEN_DARK : "#999",
-              fontSize: 16, fontWeight: chartType === t ? 700 : 500,
+              padding: "7px 14px", borderRadius: 6,
+              border: useLogScale ? `2px solid ${SE_GOLD}` : "1px solid #ccc",
+              background: useLogScale ? `${SE_GOLD}15` : "#fff",
+              color: useLogScale ? SE_GREEN_DARK : "#999",
+              fontSize: 14, fontWeight: useLogScale ? 700 : 500,
               cursor: "pointer"
             }}
           >
-            {t === "line" ? "Line" : "Bar"}
+            Log
           </button>
-        ))}
+        )}
       </div>
 
       {/* Totals */}
-      {activeFunds.length > 0 && timeRange !== "yoy" && timeRange !== "fyCompare" && (
+      {(activeFunds.length > 0 || showAllFundsTotal) && timeRange !== "yoy" && timeRange !== "fyCompare" && (
         <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
           {activeFunds.map(f => (
             <div key={f} style={{
@@ -1194,33 +1238,38 @@ export default function Dashboard() {
           )
         ) : (
           /* ─── Standard Chart ─── */
-          chartData.length === 0 || activeFunds.length === 0 ? (
+          chartData.length === 0 || (activeFunds.length === 0 && !showAllFundsTotal) ? (
             <div style={{ textAlign: "center", padding: 60, color: "#aaa", fontSize: 16 }}>
-              {activeFunds.length === 0 ? "Select at least one fund below." : "No data for the selected range."}
+              {activeFunds.length === 0 && !showAllFundsTotal ? "Select at least one fund below." : "No data for the selected range."}
             </div>
           ) : (
+            <><span style={{display:"none"}}>{(() => { resetSmartLabels(); return ""; })()}</span>
             <ResponsiveContainer width="100%" height={370}>
               {chartType === "line" ? (
                 <LineChart data={chartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}10`} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}08`} horizontalFill={["#f8faf9", "transparent"]} fillOpacity={1} />
                   <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
-                  <YAxis tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <YAxis yAxisId="left" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
+                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [100, "auto"] : [0, "auto"]} allowDataOverflow={false} />
+                  <YAxis yAxisId="right" orientation="right" tickFormatter={fmt} tick={{ fill: "#aaa", fontSize: 12, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}10` }} tickLine={false}
+                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [100, "auto"] : [0, "auto"]} allowDataOverflow={false} />
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
                   {activeFunds.map(f => (
-                    <Line key={f} type="monotone" dataKey={f} stroke={fundColorMap[f]} strokeWidth={2.5} dot={{ r: 3, fill: fundColorMap[f] }} activeDot={{ r: 5 }}>
-                      <LabelList content={<DataLabel />} />
+                    <Line key={f} yAxisId="left" type="monotone" dataKey={f} stroke={fundColorMap[f]} strokeWidth={2.5} dot={{ r: 3, fill: fundColorMap[f] }} activeDot={{ r: 5 }}>
+                      <LabelList content={<SmartDataLabel />} />
                     </Line>
                   ))}
                   {showAllFundsTotal && (
-                    <Line key={ALL_FUNDS_TOTAL_KEY} type="monotone" dataKey={ALL_FUNDS_TOTAL_KEY} stroke={ALL_FUNDS_TOTAL_COLOR} strokeWidth={3} dot={{ r: 4, fill: ALL_FUNDS_TOTAL_COLOR }} activeDot={{ r: 6 }}>
-                      <LabelList content={<DataLabel />} />
+                    <Line key={ALL_FUNDS_TOTAL_KEY} yAxisId="left" type="monotone" dataKey={ALL_FUNDS_TOTAL_KEY} stroke={ALL_FUNDS_TOTAL_COLOR} strokeWidth={3} dot={{ r: 4, fill: ALL_FUNDS_TOTAL_COLOR }} activeDot={{ r: 6 }}>
+                      <LabelList content={<SmartDataLabel />} />
                     </Line>
                   )}
                   {/* Trend lines */}
                   {activeFunds.map(f => (
                     <Line
                       key={`${f}_trend`}
+                      yAxisId="left"
                       type="linear"
                       dataKey={`${f}_trend`}
                       stroke={fundColorMap[f]}
@@ -1235,25 +1284,33 @@ export default function Dashboard() {
                 </LineChart>
               ) : (
                 <BarChart data={chartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}10`} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}08`} horizontalFill={["#f8faf9", "transparent"]} fillOpacity={1} />
                   <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
-                  <YAxis tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} />
+                  <YAxis yAxisId="left" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
+                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [100, "auto"] : [0, "auto"]} allowDataOverflow={false} />
+                  <YAxis yAxisId="right" orientation="right" tickFormatter={fmt} tick={{ fill: "#aaa", fontSize: 12, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}10` }} tickLine={false}
+                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [100, "auto"] : [0, "auto"]} allowDataOverflow={false} />
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
                   {activeFunds.map(f => (
-                    <Bar key={f} dataKey={f} fill={fundColorMap[f]} radius={[3, 3, 0, 0]} opacity={0.88}>
-                      <LabelList content={<DataLabel />} />
+                    <Bar key={f} yAxisId="left" dataKey={f} fill={fundColorMap[f]} radius={[3, 3, 0, 0]} opacity={0.88}>
+                      <LabelList content={<SmartDataLabel />} />
                     </Bar>
                   ))}
                   {showAllFundsTotal && (
-                    <Bar key={ALL_FUNDS_TOTAL_KEY} dataKey={ALL_FUNDS_TOTAL_KEY} fill={ALL_FUNDS_TOTAL_COLOR} radius={[3, 3, 0, 0]} opacity={0.88}>
-                      <LabelList content={<DataLabel />} />
+                    <Bar key={ALL_FUNDS_TOTAL_KEY} yAxisId="left" dataKey={ALL_FUNDS_TOTAL_KEY} fill={ALL_FUNDS_TOTAL_COLOR} radius={[3, 3, 0, 0]} opacity={0.88}>
+                      <LabelList content={<SmartDataLabel />} />
                     </Bar>
                   )}
                 </BarChart>
               )}
             </ResponsiveContainer>
-          )
+            </>)
+        )}
+        {useLogScale && timeRange !== "yoy" && timeRange !== "fyCompare" && (
+          <div style={{ textAlign: "right", padding: "4px 14px 8px", fontSize: 11, fontWeight: 700, color: SE_GOLD, letterSpacing: "0.1em", fontFamily: sans }}>
+            LOGARITHMIC SCALE
+          </div>
         )}
       </div>}
 
@@ -1311,33 +1368,7 @@ export default function Dashboard() {
             <button onClick={selectNone} style={{ background: "none", border: "none", color: SE_GREEN, fontSize: 16, cursor: "pointer", fontWeight: 600 }}>None</button>
           </div>
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
-          {funds.map(f => {
-            const active = selectedFunds.has(f);
-            const color = fundColorMap[f];
-            return (
-              <button
-                key={f}
-                onClick={() => toggleFund(f)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 7,
-                  padding: "5px 13px", borderRadius: 6,
-                  border: active ? `2px solid ${color}` : "1px solid #ddd",
-                  background: active ? `${color}10` : "#fafafa",
-                  color: active ? SE_GREEN_DARK : "#999",
-                  fontSize: 16, fontWeight: active ? 600 : 400,
-                  cursor: "pointer", transition: "all 0.15s"
-                }}
-              >
-                <span style={{
-                  width: 10, height: 10, borderRadius: 3,
-                  background: active ? color : "#ddd",
-                  transition: "all 0.15s"
-                }} />
-                {f}
-              </button>
-            );
-          })}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "4px 8px" }}>
           <button
             onClick={() => setShowAllFundsTotal(prev => !prev)}
             style={{
@@ -1347,7 +1378,8 @@ export default function Dashboard() {
               background: showAllFundsTotal ? `${ALL_FUNDS_TOTAL_COLOR}10` : "#fafafa",
               color: showAllFundsTotal ? SE_GREEN_DARK : "#999",
               fontSize: 16, fontWeight: showAllFundsTotal ? 600 : 400,
-              cursor: "pointer", transition: "all 0.15s"
+              cursor: "pointer", transition: "all 0.15s",
+              gridColumn: "1 / -1"
             }}
           >
             <span style={{
@@ -1357,6 +1389,34 @@ export default function Dashboard() {
             }} />
             All Funds (Total)
           </button>
+          {funds.map(f => {
+            const active = selectedFunds.has(f);
+            const color = fundColorMap[f];
+            return (
+              <button
+                key={f}
+                onClick={() => toggleFund(f)}
+                title={f}
+                style={{
+                  display: "flex", alignItems: "center", gap: 7,
+                  padding: "5px 13px", borderRadius: 6,
+                  border: active ? `2px solid ${color}` : "1px solid #ddd",
+                  background: active ? `${color}10` : "#fafafa",
+                  color: active ? SE_GREEN_DARK : "#999",
+                  fontSize: 16, fontWeight: active ? 600 : 400,
+                  cursor: "pointer", transition: "all 0.15s",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+                }}
+              >
+                <span style={{
+                  width: 10, height: 10, borderRadius: 3, flexShrink: 0,
+                  background: active ? color : "#ddd",
+                  transition: "all 0.15s"
+                }} />
+                {f}
+              </button>
+            );
+          })}
         </div>
       </div>
 
