@@ -1049,7 +1049,7 @@ export default function Dashboard() {
             ))}
           </div>
         )}
-        {viewMode === "chart" && timeRange !== "yoy" && timeRange !== "fyCompare" && (
+        {viewMode === "chart" && timeRange !== "yoy" && timeRange !== "fyCompare" && !isOffertoryOnly && (
           <button
             onClick={() => setUseLogScale(prev => !prev)}
             style={{
