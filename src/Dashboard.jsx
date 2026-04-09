@@ -744,7 +744,7 @@ export default function Dashboard() {
     });
   };
 
-  const goHome = () => { setLoaded(false); setRawGifts([]); setFunds([]); setFileName(null); setError(null); setFyRevenue(""); setFyExpenses(""); setFyCalced(false); setDataLoadedAt(null); setIsOffertoryOnly(false); setShowAllFundsTotal(false); };
+  const goHome = () => { setLoaded(false); setRawGifts([]); setFunds([]); setFileName(null); setError(null); setFyRevenue(""); setFyExpenses(""); setFyCalced(false); setDataLoadedAt(null); setIsOffertoryOnly(false); setShowAllFundsTotal(false); setUseLogScale(false); };
   const selectAll = () => setSelectedFunds(new Set(funds));
   const selectNone = () => setSelectedFunds(new Set());
   const fmt = (v) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v.toFixed(0)}`;
@@ -1358,37 +1358,27 @@ export default function Dashboard() {
             <><span style={{display:"none"}}>{(() => { resetSmartLabels(chartData.length); return ""; })()}</span>
             <ResponsiveContainer width="100%" height={activeFunds.length > 8 ? 500 : 370}>
               {chartType === "line" ? (
-                <LineChart data={chartData} margin={{ top: 20, right: 55, left: 10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}08`} horizontalFill={["#f8faf9", "transparent"]} fillOpacity={1} />
+                <LineChart data={chartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}15`} />
                   <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
-                  <YAxis yAxisId="left" type="number" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 14, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
-                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [1, "auto"] : [0, "auto"]} allowDataOverflow={useLogScale} tickCount={6} />
-                  <YAxis yAxisId="right" type="number" orientation="right" tickFormatter={fmt} tick={{ fill: "#aaa", fontSize: 13, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}10` }} tickLine={false}
+                  <YAxis type="number" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 14, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
                     scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [1, "auto"] : [0, "auto"]} allowDataOverflow={useLogScale} tickCount={6} />
                   <Tooltip content={<CustomTooltip />} />
                   {activeFunds.length <= 8 && <Legend wrapperStyle={{ fontSize: 14, fontFamily: sans }} />}
                   {activeFunds.map(f => (
-                    <Line key={f} yAxisId="left" type="monotone" dataKey={f} stroke={fundColorMap[f]} strokeWidth={2.5} dot={{ r: 3, fill: fundColorMap[f] }} activeDot={{ r: 5 }} connectNulls>
+                    <Line key={f} type="monotone" dataKey={f} stroke={fundColorMap[f]} strokeWidth={2.5} dot={{ r: 3, fill: fundColorMap[f] }} activeDot={{ r: 5 }} isAnimationActive={false}>
                       <LabelList content={<SmartDataLabel />} />
                     </Line>
                   ))}
                   {showAllFundsTotal && (
-                    <Line key={ALL_FUNDS_TOTAL_KEY} yAxisId="left" type="monotone" dataKey={ALL_FUNDS_TOTAL_KEY} stroke={ALL_FUNDS_TOTAL_COLOR} strokeWidth={3} dot={{ r: 4, fill: ALL_FUNDS_TOTAL_COLOR }} activeDot={{ r: 6 }}>
+                    <Line key={ALL_FUNDS_TOTAL_KEY} type="monotone" dataKey={ALL_FUNDS_TOTAL_KEY} stroke={ALL_FUNDS_TOTAL_COLOR} strokeWidth={3} dot={{ r: 4, fill: ALL_FUNDS_TOTAL_COLOR }} activeDot={{ r: 6 }} isAnimationActive={false}>
                       <LabelList content={<SmartDataLabel />} />
                     </Line>
-                  )}
-                  {/* Mirror: duplicate each fund on right axis (invisible) so ticks match */}
-                  {activeFunds.map(f => (
-                    <Line key={`${f}_r`} yAxisId="right" dataKey={f} stroke="transparent" dot={false} activeDot={false} legendType="none" />
-                  ))}
-                  {showAllFundsTotal && (
-                    <Line key={`${ALL_FUNDS_TOTAL_KEY}_r`} yAxisId="right" dataKey={ALL_FUNDS_TOTAL_KEY} stroke="transparent" dot={false} activeDot={false} legendType="none" />
                   )}
                   {/* Trend lines */}
                   {activeFunds.map(f => (
                     <Line
                       key={`${f}_trend`}
-                      yAxisId="left"
                       type="linear"
                       dataKey={`${f}_trend`}
                       stroke={fundColorMap[f]}
@@ -1398,26 +1388,25 @@ export default function Dashboard() {
                       activeDot={false}
                       legendType="none"
                       opacity={0.5}
+                      isAnimationActive={false}
                     />
                   ))}
                 </LineChart>
               ) : (
-                <BarChart data={chartData} margin={{ top: 20, right: 55, left: 10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}08`} horizontalFill={["#f8faf9", "transparent"]} fillOpacity={1} />
+                <BarChart data={chartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}15`} />
                   <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
-                  <YAxis yAxisId="left" type="number" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 14, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
-                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [1, "auto"] : [0, "auto"]} allowDataOverflow={useLogScale} tickCount={6} />
-                  <YAxis yAxisId="right" type="number" orientation="right" tickFormatter={fmt} tick={{ fill: "#aaa", fontSize: 13, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}10` }} tickLine={false}
+                  <YAxis type="number" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 14, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
                     scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [1, "auto"] : [0, "auto"]} allowDataOverflow={useLogScale} tickCount={6} />
                   <Tooltip content={<CustomTooltip />} />
                   {activeFunds.length <= 8 && <Legend wrapperStyle={{ fontSize: 14, fontFamily: sans }} />}
                   {activeFunds.map(f => (
-                    <Bar key={f} yAxisId="left" dataKey={f} fill={fundColorMap[f]} radius={[3, 3, 0, 0]} opacity={0.88}>
+                    <Bar key={f} dataKey={f} fill={fundColorMap[f]} radius={[3, 3, 0, 0]} opacity={0.88} isAnimationActive={false}>
                       <LabelList content={<SmartDataLabel />} />
                     </Bar>
                   ))}
                   {showAllFundsTotal && (
-                    <Bar key={ALL_FUNDS_TOTAL_KEY} yAxisId="left" dataKey={ALL_FUNDS_TOTAL_KEY} fill={ALL_FUNDS_TOTAL_COLOR} radius={[3, 3, 0, 0]} opacity={0.88}>
+                    <Bar key={ALL_FUNDS_TOTAL_KEY} dataKey={ALL_FUNDS_TOTAL_KEY} fill={ALL_FUNDS_TOTAL_COLOR} radius={[3, 3, 0, 0]} opacity={0.88} isAnimationActive={false}>
                       <LabelList content={<SmartDataLabel />} />
                     </Bar>
                   )}
