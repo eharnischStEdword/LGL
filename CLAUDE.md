@@ -53,6 +53,24 @@ Push to main branch. Render auto-deploys from GitHub.
 - Data flow: permanent link (bulk daily) + API top-up (real-time recent gifts)
 - 5-minute server-side cache on hybrid/recent endpoints
 
+## Historical Data
+- HISTORICAL_MONTHLY constant in Dashboard.jsx contains pre-aggregated monthly gift
+  totals from the PDS/Pushpay import (Jul 2019 – Dec 2024, 42 funds, ~978 entries)
+- Source: LGL_Historical_Import.csv (63k rows of individual gifts)
+- These backfill months where the LGL scheduled report has no data
+- Only funds present in the loaded LGL report appear in the fund selector;
+  historical-only funds are NOT added to avoid polluting the Offertory view
+- "All Funds (Total)" toggle is hidden on the Offertory-only report because
+  rawGifts only contains Offertory data — the total would be misleading
+
+## Chart Behavior
+- SmartDataLabel: collision-aware labels that skip overlapping text (40px h / 16px v gap)
+- Standard chart uses DataLabel for YoY/FY Compare (fewer points), SmartDataLabel otherwise
+- When >6 funds selected: totals collapse to summary, trend badges hidden
+- When >8 funds selected: chart legend hidden, chart height increases to 500px
+- Log scale toggle available for mixed-magnitude fund comparisons
+- Dual Y-axis (left + right) on standard chart; all data bound to left axis
+
 ## User
 Eric is not a developer. Explain before running destructive commands.
 Do not assume Git or npm knowledge beyond copy-paste.

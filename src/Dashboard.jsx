@@ -216,7 +216,7 @@ const SmartDataLabel = ({ x, y, width, value }) => {
   const cy = y - 10;
   // Check collision with already-placed labels
   for (const pos of _smartLabelPositions) {
-    if (Math.abs(cx - pos.x) < 58 && Math.abs(cy - pos.y) < 20) return null;
+    if (Math.abs(cx - pos.x) < 40 && Math.abs(cy - pos.y) < 16) return null;
   }
   _smartLabelPositions.push({ x: cx, y: cy });
   const label = value >= 1000 ? `$${(value/1000).toFixed(1)}k` : `$${value.toFixed(0)}`;
@@ -259,6 +259,7 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
   const [fileName, setFileName] = useState(null);
   const [fetching, setFetching] = useState(null); // null | "offertory" | "allFunds"
+  const [isOffertoryOnly, setIsOffertoryOnly] = useState(false);
   const [authUser, setAuthUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [fyRevenue, setFyRevenue] = useState("");
@@ -304,6 +305,7 @@ export default function Dashboard() {
   const fetchFromLGL = useCallback(async (offertoryOnly = false) => {
     setError(null);
     setFetching(offertoryOnly ? "offertory" : "allFunds");
+    setIsOffertoryOnly(offertoryOnly);
     try {
       const endpoint = offertoryOnly ? LGL_OFFERTORY_ENDPOINT : LGL_ALL_FUNDS_ENDPOINT;
       const resp = await fetch(endpoint);
@@ -742,7 +744,7 @@ export default function Dashboard() {
     });
   };
 
-  const goHome = () => { setLoaded(false); setRawGifts([]); setFunds([]); setFileName(null); setError(null); setFyRevenue(""); setFyExpenses(""); setFyCalced(false); setDataLoadedAt(null); };
+  const goHome = () => { setLoaded(false); setRawGifts([]); setFunds([]); setFileName(null); setError(null); setFyRevenue(""); setFyExpenses(""); setFyCalced(false); setDataLoadedAt(null); setIsOffertoryOnly(false); setShowAllFundsTotal(false); };
   const selectAll = () => setSelectedFunds(new Set(funds));
   const selectNone = () => setSelectedFunds(new Set());
   const fmt = (v) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v.toFixed(0)}`;
@@ -1479,26 +1481,28 @@ export default function Dashboard() {
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "4px 8px" }}>
-          <button
-            onClick={() => setShowAllFundsTotal(prev => !prev)}
-            style={{
-              display: "flex", alignItems: "center", gap: 7,
-              padding: "6px 10px", borderRadius: 6,
-              border: showAllFundsTotal ? `2px solid ${ALL_FUNDS_TOTAL_COLOR}` : "1px solid #ddd",
-              background: showAllFundsTotal ? `${ALL_FUNDS_TOTAL_COLOR}10` : "#fafafa",
-              color: showAllFundsTotal ? SE_GREEN_DARK : "#999",
-              fontSize: 13, fontWeight: showAllFundsTotal ? 600 : 400,
-              cursor: "pointer", transition: "all 0.15s",
-              gridColumn: "1 / -1", minHeight: 34
-            }}
-          >
-            <span style={{
-              width: 10, height: 10, borderRadius: 3,
-              background: showAllFundsTotal ? ALL_FUNDS_TOTAL_COLOR : "#ddd",
-              transition: "all 0.15s"
-            }} />
-            All Funds (Total)
-          </button>
+          {!isOffertoryOnly && (
+            <button
+              onClick={() => setShowAllFundsTotal(prev => !prev)}
+              style={{
+                display: "flex", alignItems: "center", gap: 7,
+                padding: "6px 10px", borderRadius: 6,
+                border: showAllFundsTotal ? `2px solid ${ALL_FUNDS_TOTAL_COLOR}` : "1px solid #ddd",
+                background: showAllFundsTotal ? `${ALL_FUNDS_TOTAL_COLOR}10` : "#fafafa",
+                color: showAllFundsTotal ? SE_GREEN_DARK : "#999",
+                fontSize: 13, fontWeight: showAllFundsTotal ? 600 : 400,
+                cursor: "pointer", transition: "all 0.15s",
+                gridColumn: "1 / -1", minHeight: 34
+              }}
+            >
+              <span style={{
+                width: 10, height: 10, borderRadius: 3,
+                background: showAllFundsTotal ? ALL_FUNDS_TOTAL_COLOR : "#ddd",
+                transition: "all 0.15s"
+              }} />
+              All Funds (Total)
+            </button>
+          )}
           {funds.map(f => {
             const active = selectedFunds.has(f);
             const color = fundColorMap[f];
