@@ -415,8 +415,8 @@ export default function Dashboard() {
       setError("No valid gift rows found. Check that date and amount columns contain recognizable data.");
       return;
     }
-    // Include funds from historical data that may not be in current LGL report
-    for (const f of Object.keys(HISTORICAL_MONTHLY)) fundSet.add(f);
+    // Only add historical funds that also exist in the live LGL data.
+    // This prevents the Offertory-only report from showing all 42 funds.
     const sortedFunds = [...fundSet].sort();
     setRawGifts(gifts);
     setFunds(sortedFunds);
@@ -1343,7 +1343,7 @@ export default function Dashboard() {
             <><span style={{display:"none"}}>{(() => { resetSmartLabels(); return ""; })()}</span>
             <ResponsiveContainer width="100%" height={370}>
               {chartType === "line" ? (
-                <LineChart data={chartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
+                <LineChart data={chartData} margin={{ top: 20, right: 55, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}08`} horizontalFill={["#f8faf9", "transparent"]} fillOpacity={1} />
                   <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
                   <YAxis yAxisId="left" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
@@ -1380,7 +1380,7 @@ export default function Dashboard() {
                   ))}
                 </LineChart>
               ) : (
-                <BarChart data={chartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
+                <BarChart data={chartData} margin={{ top: 20, right: 55, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}08`} horizontalFill={["#f8faf9", "transparent"]} fillOpacity={1} />
                   <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
                   <YAxis yAxisId="left" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
