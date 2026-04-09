@@ -71,9 +71,11 @@ const HISTORICAL_MONTHLY = {
 };
 
 const FUND_COLORS = [
-  SE_GREEN, SE_BLUE, "#2e8b57", "#3a7a5c", "#005921",
-  "#1a6b3c", "#22763e", SE_GOLD, "#006644", "#2d7d4f",
-  "#357a38", "#4a9e6e", "#1b5e20", "#4e7a4e", "#5c8a5e"
+  SE_GREEN, SE_BLUE, "#c0392b", SE_GOLD, "#8e44ad",
+  "#e67e22", "#16a085", "#2c3e50", "#d35400", "#1abc9c",
+  "#7f8c8d", "#e74c3c", "#3498db", "#9b59b6", "#f39c12",
+  "#27ae60", "#e84393", "#00b894", "#6c5ce7", "#fdcb6e",
+  "#e17055", "#0984e3", "#636e72", "#d63031", "#a29bfe"
 ];
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -207,12 +209,15 @@ const DataLabel = ({ x, y, width, value }) => {
   );
 };
 
-// Smart label for the standard chart — shows every data point label
-// since Recharts handles positioning. Smaller font to reduce overlap.
-let _smartLabelCount = 0;
-function resetSmartLabels() { _smartLabelCount = 0; }
+// Smart label that shows every Nth point based on chart density.
+// _smartLabelTotal is set before each chart render to the number of data points.
+let _smartLabelTotal = 12;
+function resetSmartLabels(total) { _smartLabelTotal = total || 12; }
 const SmartDataLabel = ({ x, y, width, value, index }) => {
   if (!value || value === 0) return null;
+  // Show every Nth label to prevent overlap. N depends on density.
+  const step = _smartLabelTotal <= 12 ? 1 : _smartLabelTotal <= 24 ? 2 : 3;
+  if (index % step !== 0) return null;
   const cx = width != null ? x + width / 2 : x;
   const label = value >= 1000 ? `$${(value/1000).toFixed(1)}k` : `$${value.toFixed(0)}`;
   return (
@@ -1350,18 +1355,18 @@ export default function Dashboard() {
               {activeFunds.length === 0 && !showAllFundsTotal ? "Select at least one fund below." : "No data for the selected range."}
             </div>
           ) : (
-            <><span style={{display:"none"}}>{(() => { resetSmartLabels(); return ""; })()}</span>
+            <><span style={{display:"none"}}>{(() => { resetSmartLabels(chartData.length); return ""; })()}</span>
             <ResponsiveContainer width="100%" height={activeFunds.length > 8 ? 500 : 370}>
               {chartType === "line" ? (
                 <LineChart data={chartData} margin={{ top: 20, right: 55, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}08`} horizontalFill={["#f8faf9", "transparent"]} fillOpacity={1} />
                   <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
-                  <YAxis yAxisId="left" type="number" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
-                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [1, "auto"] : [0, "auto"]} allowDataOverflow={useLogScale} />
-                  <YAxis yAxisId="right" type="number" orientation="right" tickFormatter={fmt} tick={{ fill: "#aaa", fontSize: 12, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}10` }} tickLine={false}
-                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [1, "auto"] : [0, "auto"]} allowDataOverflow={useLogScale} />
+                  <YAxis yAxisId="left" type="number" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 14, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
+                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [1, "auto"] : [0, "auto"]} allowDataOverflow={useLogScale} tickCount={6} />
+                  <YAxis yAxisId="right" type="number" orientation="right" tickFormatter={fmt} tick={{ fill: "#aaa", fontSize: 13, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}10` }} tickLine={false}
+                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [1, "auto"] : [0, "auto"]} allowDataOverflow={useLogScale} tickCount={6} />
                   <Tooltip content={<CustomTooltip />} />
-                  {activeFunds.length <= 8 && <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />}
+                  {activeFunds.length <= 8 && <Legend wrapperStyle={{ fontSize: 14, fontFamily: sans }} />}
                   {activeFunds.map(f => (
                     <Line key={f} yAxisId="left" type="monotone" dataKey={f} stroke={fundColorMap[f]} strokeWidth={2.5} dot={{ r: 3, fill: fundColorMap[f] }} activeDot={{ r: 5 }} connectNulls>
                       <LabelList content={<SmartDataLabel />} />
@@ -1372,8 +1377,13 @@ export default function Dashboard() {
                       <LabelList content={<SmartDataLabel />} />
                     </Line>
                   )}
-                  {/* Hidden line to activate right YAxis */}
-                  <Line yAxisId="right" dataKey={activeFunds[0] || ALL_FUNDS_TOTAL_KEY} stroke="transparent" dot={false} activeDot={false} legendType="none" />
+                  {/* Mirror: duplicate each fund on right axis (invisible) so ticks match */}
+                  {activeFunds.map(f => (
+                    <Line key={`${f}_r`} yAxisId="right" dataKey={f} stroke="transparent" dot={false} activeDot={false} legendType="none" />
+                  ))}
+                  {showAllFundsTotal && (
+                    <Line key={`${ALL_FUNDS_TOTAL_KEY}_r`} yAxisId="right" dataKey={ALL_FUNDS_TOTAL_KEY} stroke="transparent" dot={false} activeDot={false} legendType="none" />
+                  )}
                   {/* Trend lines */}
                   {activeFunds.map(f => (
                     <Line
@@ -1395,12 +1405,12 @@ export default function Dashboard() {
                 <BarChart data={chartData} margin={{ top: 20, right: 55, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}08`} horizontalFill={["#f8faf9", "transparent"]} fillOpacity={1} />
                   <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
-                  <YAxis yAxisId="left" type="number" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
-                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [1, "auto"] : [0, "auto"]} allowDataOverflow={useLogScale} />
-                  <YAxis yAxisId="right" type="number" orientation="right" tickFormatter={fmt} tick={{ fill: "#aaa", fontSize: 12, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}10` }} tickLine={false}
-                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [1, "auto"] : [0, "auto"]} allowDataOverflow={useLogScale} />
+                  <YAxis yAxisId="left" type="number" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 14, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
+                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [1, "auto"] : [0, "auto"]} allowDataOverflow={useLogScale} tickCount={6} />
+                  <YAxis yAxisId="right" type="number" orientation="right" tickFormatter={fmt} tick={{ fill: "#aaa", fontSize: 13, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}10` }} tickLine={false}
+                    scale={useLogScale ? "log" : "auto"} domain={useLogScale ? [1, "auto"] : [0, "auto"]} allowDataOverflow={useLogScale} tickCount={6} />
                   <Tooltip content={<CustomTooltip />} />
-                  {activeFunds.length <= 8 && <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />}
+                  {activeFunds.length <= 8 && <Legend wrapperStyle={{ fontSize: 14, fontFamily: sans }} />}
                   {activeFunds.map(f => (
                     <Bar key={f} yAxisId="left" dataKey={f} fill={fundColorMap[f]} radius={[3, 3, 0, 0]} opacity={0.88}>
                       <LabelList content={<SmartDataLabel />} />
@@ -1411,8 +1421,6 @@ export default function Dashboard() {
                       <LabelList content={<SmartDataLabel />} />
                     </Bar>
                   )}
-                  {/* Hidden bar to activate right YAxis */}
-                  <Bar yAxisId="right" dataKey={activeFunds[0] || ALL_FUNDS_TOTAL_KEY} fill="transparent" legendType="none" />
                 </BarChart>
               )}
             </ResponsiveContainer>
