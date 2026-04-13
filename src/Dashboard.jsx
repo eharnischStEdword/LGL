@@ -1582,11 +1582,67 @@ export default function Dashboard() {
               <span style={{ fontSize: 20, fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif }}>
                 Financial Snapshot ({monthName(lastMonth)})
               </span>
-              <span style={{
-                fontSize: 16, color: "#aaa", fontStyle: "italic"
-              }}>
-                For parish bulletin
-              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{
+                  fontSize: 16, color: "#aaa", fontStyle: "italic"
+                }}>
+                  For parish bulletin
+                </span>
+                <button
+                  onClick={() => {
+                    const mn = monthName(lastMonth);
+                    const pm = monthName(prevMonth);
+                    const lym = monthName(lastYearMonth);
+                    const mDiffStr = `${diffSign(monthDiff)}${fmtFull(Math.abs(monthDiff))}`;
+                    const yDiffStr = lastYearTotal > 0
+                      ? `${diffSign(yearDiff)}${fmtFull(Math.abs(yearDiff))} (${diffSign(yearDiff)}${((yearDiff / lastYearTotal) * 100).toFixed(1)}%)`
+                      : "N/A";
+                    const mDiffColor = monthDiff >= 0 ? "#00843D" : "#c0392b";
+                    const yDiffColor = yearDiff >= 0 ? "#00843D" : "#c0392b";
+
+                    const html = `<table style="border-collapse:collapse;font-family:'Noto Sans',Calibri,Arial,sans-serif;font-size:11pt;width:auto;max-width:360px;">
+  <tr><td colspan="2" style="font-weight:bold;font-size:12pt;color:#005921;padding:4px 8px 6px 8px;border-bottom:2px solid #00843D;">Offertory Collections — ${mn}</td></tr>
+  <tr><td style="padding:3px 8px;color:#333;">${mn}</td><td style="padding:3px 8px;text-align:right;font-weight:bold;color:#005921;">${fmtFull(lastMonthTotal)}</td></tr>
+  <tr><td style="padding:3px 8px;color:#333;">${pm}</td><td style="padding:3px 8px;text-align:right;font-weight:bold;color:#005921;">${fmtFull(prevMonthTotal)}</td></tr>
+  <tr><td style="padding:3px 8px;color:#666;">${lym} <span style="color:#999;">(prior yr)</span></td><td style="padding:3px 8px;text-align:right;font-weight:bold;color:#005921;">${lastYearTotal > 0 ? fmtFull(lastYearTotal) : "N/A"}</td></tr>
+  <tr><td colspan="2" style="padding:2px 0;border-bottom:1px solid #ddd;"></td></tr>
+  <tr><td style="padding:3px 8px;color:#333;">Month-to-month</td><td style="padding:3px 8px;text-align:right;font-weight:bold;color:${mDiffColor};">${mDiffStr}</td></tr>
+  <tr><td style="padding:3px 8px;color:#333;">Year-over-year</td><td style="padding:3px 8px;text-align:right;font-weight:bold;color:${yDiffColor};">${yDiffStr}</td></tr>
+</table>`;
+
+                    const blob = new Blob([html], { type: "text/html" });
+                    const plainRows = [
+                      `Offertory Collections — ${mn}`,
+                      `${mn}\t${fmtFull(lastMonthTotal)}`,
+                      `${pm}\t${fmtFull(prevMonthTotal)}`,
+                      `${lym} (prior yr)\t${lastYearTotal > 0 ? fmtFull(lastYearTotal) : "N/A"}`,
+                      ``,
+                      `Month-to-month\t${mDiffStr}`,
+                      `Year-over-year\t${yDiffStr}`,
+                    ].join("\n");
+                    const textBlob = new Blob([plainRows], { type: "text/plain" });
+
+                    navigator.clipboard.write([
+                      new ClipboardItem({
+                        "text/html": blob,
+                        "text/plain": textBlob,
+                      })
+                    ]).then(() => {
+                      const btn = document.getElementById("copy-snapshot-btn");
+                      if (btn) { btn.textContent = "Copied!"; setTimeout(() => { btn.textContent = "Copy for Bulletin"; }, 2000); }
+                    });
+                  }}
+                  id="copy-snapshot-btn"
+                  style={{
+                    padding: "5px 14px", fontSize: 13, fontWeight: 600,
+                    background: SE_GREEN, color: "#fff", border: "none",
+                    borderRadius: 5, cursor: "pointer", fontFamily: sans,
+                    whiteSpace: "nowrap"
+                  }}
+                >
+                  Copy for Bulletin
+                </button>
+              </div>
             </div>
 
             {/* Monthly Collections */}
