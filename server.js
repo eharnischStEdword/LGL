@@ -1,6 +1,7 @@
 import express from "express";
 import session from "express-session";
 import crypto from "crypto";
+import zlib from "zlib";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import * as XLSX from "xlsx";
@@ -196,23 +197,74 @@ app.get("/auth/logout", (req, res) => {
 
 // ─── Protected API ───
 
+// Extract the first .csv entry from a ZIP archive buffer.
+// LGL now delivers the large "FULL GIVING REPORT" (All Funds) export as a .zip
+// wrapping a single .csv, which browser SheetJS can't read ("Unsupported ZIP file").
+// A real .xlsx is also a zip, but its entries are OOXML parts (no .csv), so this
+// returns null for xlsx and the caller forwards it unchanged.
+// Reads sizes from the central directory so it is immune to streaming zips that
+// defer sizes to a data descriptor.
+function extractCsvFromZip(buf) {
+  const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+  if (b.length < 22 || b.readUInt32LE(0) !== 0x04034b50) return null; // not a zip
+
+  // Find the End Of Central Directory record (scan back for PK\x05\x06)
+  let eocd = -1;
+  for (let i = b.length - 22; i >= 0 && i >= b.length - 22 - 65536; i--) {
+    if (b.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd === -1) return null;
+
+  let cd = b.readUInt32LE(eocd + 16);
+  const entries = b.readUInt16LE(eocd + 10);
+  for (let e = 0; e < entries; e++) {
+    if (b.readUInt32LE(cd) !== 0x02014b50) return null; // bad central directory header
+    const method = b.readUInt16LE(cd + 10);
+    const compSize = b.readUInt32LE(cd + 20);
+    const nameLen = b.readUInt16LE(cd + 28);
+    const extraLen = b.readUInt16LE(cd + 30);
+    const commentLen = b.readUInt16LE(cd + 32);
+    const localOffset = b.readUInt32LE(cd + 42);
+    const name = b.slice(cd + 46, cd + 46 + nameLen).toString("utf-8");
+
+    if (name.toLowerCase().endsWith(".csv")) {
+      if (b.readUInt32LE(localOffset) !== 0x04034b50) return null;
+      const lNameLen = b.readUInt16LE(localOffset + 26);
+      const lExtraLen = b.readUInt16LE(localOffset + 28);
+      const dataStart = localOffset + 30 + lNameLen + lExtraLen;
+      const comp = b.slice(dataStart, dataStart + compSize);
+      const out = method === 8 ? zlib.inflateRawSync(comp) : comp; // 8=deflate, 0=stored
+      return out.toString("utf-8");
+    }
+    cd += 46 + nameLen + extraLen + commentLen;
+  }
+  return null;
+}
+
 // Helper to proxy an LGL permanent link
 async function proxyLGL(url, res) {
   const resp = await fetch(url);
   if (!resp.ok) {
     return res.status(resp.status).json({ error: `LGL returned ${resp.status}` });
   }
-  const buf = await resp.arrayBuffer();
-  // Forward the actual content type from LGL (could be xlsx or csv)
-  const ct = resp.headers.get("content-type") || "application/octet-stream";
-  res.set("Content-Type", ct);
+  const buf = Buffer.from(await resp.arrayBuffer());
   // Extract report date from Content-Disposition filename (e.g. "...Update 2026-03-15.xlsx")
   const cd = resp.headers.get("content-disposition") || "";
   const dateMatch = cd.match(/(\d{4}-\d{2}-\d{2})/);
   if (dateMatch) {
     res.set("X-Report-Date", dateMatch[1]);
   }
-  res.send(Buffer.from(buf));
+  // LGL now zips the large All Funds export. Unwrap to the inner CSV so the
+  // browser parses plain text instead of choking on a non-xlsx zip.
+  const csv = extractCsvFromZip(buf);
+  if (csv !== null) {
+    res.set("Content-Type", "text/csv; charset=utf-8");
+    return res.send(csv);
+  }
+  // Otherwise forward as-is (real .xlsx, or a plain .csv)
+  const ct = resp.headers.get("content-type") || "application/octet-stream";
+  res.set("Content-Type", ct);
+  res.send(buf);
 }
 
 // Offertory-only report
