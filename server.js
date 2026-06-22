@@ -325,6 +325,17 @@ async function fetchLGLApiGifts(sinceDate, fundFilter) {
 
   for (let page = 0; page < maxPages; page++) {
     const params = new URLSearchParams();
+    // NOTE (axis mismatch — see audit finding #11): this selects gifts by their
+    // UPDATED-at date, but every downstream consumer buckets gifts by RECEIVED
+    // date (received_date / gift_date). A gift received after `sinceDate` whose
+    // record was last touched before it (e.g. an advance-entered or back-dated
+    // gift) can be skipped by this window, then appear later once the daily
+    // export catches it. The correct axis is the gift date, e.g.
+    //   params.append("q[]", `gift_date_from=${sinceDate}`);
+    // Left on `updated_from` for now because it is the proven-working filter and
+    // swapping the param has not been validated against the live LGL API; doing
+    // so blind risks silently disabling the recent-gifts top-up. Verify the
+    // `gift_date_from` key and the result sort order against a live key first.
     params.append("q[]", `updated_from=${sinceDate}`);
     params.append("limit", String(limit));
     params.append("offset", String(offset));

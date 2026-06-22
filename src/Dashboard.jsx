@@ -117,6 +117,15 @@ function parseDateFlexible(str) {
     const d = new Date(1899, 11, 30 + Math.round(num));
     if (!isNaN(d.getTime())) return d;
   }
+  // Date-only ISO strings ("2026-07-01", as the LGL API supplies received_date)
+  // parse as UTC midnight in JS, which reads back a day earlier in local time and
+  // can push a gift into the wrong month — or, for July 1, the wrong fiscal year.
+  // Parse them in LOCAL time to match the Excel-serial branch and keep the daily
+  // export and the API top-up on the same date basis.
+  if (typeof str === "string") {
+    const iso = str.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+  }
   const d = new Date(str);
   if (!isNaN(d.getTime())) return d;
   return null;
@@ -197,10 +206,62 @@ function computeTrend(data, key) {
   return { data: trendData, pct };
 }
 
+// Enumerate the COMPLETED-month buckets for the current period and the equivalent
+// prior-year period, for an honest per-fund "is giving up or down" comparison.
+// The current (partial) month is excluded from BOTH windows so the comparison is
+// like-for-like (equal completed months). Returns null for ranges where a
+// period-over-period comparison is not meaningful (e.g. "all" / full history).
+function periodBuckets(timeRange, now) {
+  const curY = now.getFullYear();
+  const curM = now.getMonth(); // 0-11, the current partial month — always excluded
+  const walk = (startY, startM, count) => {
+    const out = [];
+    let y = startY, m = startM;
+    for (let i = 0; i < count; i++) {
+      out.push({ y, m });
+      m++; if (m > 11) { m = 0; y++; }
+    }
+    return out;
+  };
+  if (timeRange === "fy") {
+    const fyStartY = curM >= FY_START_MONTH - 1 ? curY : curY - 1;
+    const elapsed = curM >= FY_START_MONTH - 1 ? curM - (FY_START_MONTH - 1) : curM + (12 - (FY_START_MONTH - 1));
+    if (elapsed <= 0) return null; // FY just started, no completed month yet
+    const current = walk(fyStartY, FY_START_MONTH - 1, elapsed);
+    return { current, prior: current.map(b => ({ y: b.y - 1, m: b.m })), label: "vs last year" };
+  }
+  if (timeRange === "ytd") {
+    const elapsed = curM; // completed months Jan..(curM-1)
+    if (elapsed <= 0) return null;
+    const current = walk(curY, 0, elapsed);
+    return { current, prior: current.map(b => ({ y: b.y - 1, m: b.m })), label: "vs last year" };
+  }
+  if (timeRange === "last12" || timeRange === "last24") {
+    const n = timeRange === "last12" ? 12 : 24;
+    let lastY = curY, lastM = curM - 1; // last completed month
+    if (lastM < 0) { lastM = 11; lastY--; }
+    let sM = lastM - (n - 1), sY = lastY;
+    while (sM < 0) { sM += 12; sY--; }
+    const current = walk(sY, sM, n);
+    let pM = sM - n, pY = sY;
+    while (pM < 0) { pM += 12; pY--; }
+    return { current, prior: walk(pY, pM, n), label: n === 12 ? "vs prior 12 mo" : "vs prior 24 mo" };
+  }
+  return null; // "all" and anything else: no period comparison
+}
+
+// Shared currency label formatter. Handles negatives consistently (e.g. a refund
+// or reversal month) as "-$1.2k" instead of the old "$-1234", matching the table.
+function fmtLabel(value) {
+  const a = Math.abs(value);
+  const s = a >= 1000 ? `$${(a / 1000).toFixed(1)}k` : `$${a.toFixed(0)}`;
+  return value < 0 ? `-${s}` : s;
+}
+
 // Custom label for data points (used by YoY and FY Compare charts — fewer points)
 const DataLabel = ({ x, y, width, value }) => {
-  if (!value || value === 0) return null;
-  const label = value >= 1000 ? `$${(value/1000).toFixed(1)}k` : `$${value.toFixed(0)}`;
+  if (!value) return null;
+  const label = fmtLabel(value);
   const cx = width != null ? x + width / 2 : x;
   return (
     <text x={cx} y={y - 12} textAnchor="middle" fill="#555" fontSize={16} fontFamily={sans}>
@@ -209,17 +270,20 @@ const DataLabel = ({ x, y, width, value }) => {
   );
 };
 
-// Smart label that shows every Nth point based on chart density.
-// _smartLabelTotal is set before each chart render to the number of data points.
+// Smart label that shows every Nth point based on chart density, but ALWAYS labels
+// the dominant peak(s) so a lone large spike never renders without its dollar value.
+// _smartLabelTotal / _smartLabelMax are set before each chart render.
 let _smartLabelTotal = 12;
-function resetSmartLabels(total) { _smartLabelTotal = total || 12; }
+let _smartLabelMax = 0;
+function resetSmartLabels(total, max) { _smartLabelTotal = total || 12; _smartLabelMax = max || 0; }
 const SmartDataLabel = ({ x, y, width, value, index }) => {
-  if (!value || value === 0) return null;
+  if (!value) return null;
   // Show every Nth label to prevent overlap. N depends on density.
   const step = _smartLabelTotal <= 12 ? 1 : _smartLabelTotal <= 24 ? 2 : 3;
-  if (index % step !== 0) return null;
+  const isPeak = _smartLabelMax > 0 && value >= _smartLabelMax * 0.85;
+  if (index % step !== 0 && !isPeak) return null; // keep the peak even if it falls on a skipped index
   const cx = width != null ? x + width / 2 : x;
-  const label = value >= 1000 ? `$${(value/1000).toFixed(1)}k` : `$${value.toFixed(0)}`;
+  const label = fmtLabel(value);
   return (
     <text x={cx} y={y - 10} textAnchor="middle" fill="#555" fontSize={11} fontFamily={sans}>
       {label}
@@ -229,8 +293,8 @@ const SmartDataLabel = ({ x, y, width, value, index }) => {
 // Factory for nudged labels (Recharts LabelList doesn't forward custom props)
 const makeNudgedLabel = (nudge) => {
   const NudgedLabel = ({ x, y, width, value }) => {
-    if (!value || value === 0) return null;
-    const label = value >= 1000 ? `$${(value/1000).toFixed(1)}k` : `$${value.toFixed(0)}`;
+    if (!value) return null;
+    const label = fmtLabel(value);
     const cx = width != null ? x + width / 2 : x;
     return (
       <text x={cx} y={y - 12 + nudge} textAnchor="middle" fill="#555" fontSize={14} fontFamily={sans}>
@@ -254,6 +318,7 @@ export default function Dashboard() {
   const [timeRange, setTimeRange] = useState("last12");
   const [chartType, setChartType] = useState("line");
   const [useLogScale, setUseLogScale] = useState(false);
+  const [fundSearch, setFundSearch] = useState("");
   const [colMapping, setColMapping] = useState({ dateCol: null, amountCol: null, fundCol: null });
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(null);
@@ -439,21 +504,29 @@ export default function Dashboard() {
   const giftIndex = useMemo(() => {
     const idx = {};
     const allIdx = {}; // all funds combined
+    const liveKeys = new Set();    // exact fund|yr|mo that have live data
+    const liveAllKeys = new Set(); // case-normalized, for the all-funds total
     for (const g of rawGifts) {
       const yr = g.date.getFullYear();
       const mo = g.date.getMonth();
       const fk = `${g.fund}|${yr}|${mo}`;
       idx[fk] = (idx[fk] || 0) + g.amount;
+      liveKeys.add(fk);
+      liveAllKeys.add(`${g.fund.toLowerCase().trim()}|${yr}|${mo}`);
       const ak = `${yr}|${mo}`;
       allIdx[ak] = (allIdx[ak] || 0) + g.amount;
     }
-    // Backfill from HISTORICAL_MONTHLY where LGL data is missing
+    // Backfill from HISTORICAL_MONTHLY where LGL has no live data. Gate on the
+    // live KEY SET, not on the accumulated amount, so a real $0 live month
+    // (a gift plus an equal refund) is not silently replaced by the historical value.
     for (const [fund, months] of Object.entries(HISTORICAL_MONTHLY)) {
       for (const [ym, amount] of Object.entries(months)) {
         const [y, m] = ym.split("-").map(Number);
         const fk = `${fund}|${y}|${m - 1}`;
-        if (!idx[fk]) {
-          idx[fk] = amount;
+        if (!liveKeys.has(fk)) idx[fk] = amount;
+        // All-funds total: case-insensitive presence check so live "Offertory" and
+        // historical "offertory" are recognized as the same fund and not double-counted.
+        if (!liveAllKeys.has(`${fund.toLowerCase().trim()}|${y}|${m - 1}`)) {
           const ak = `${y}|${m - 1}`;
           allIdx[ak] = (allIdx[ak] || 0) + amount;
         }
@@ -502,7 +575,9 @@ export default function Dashboard() {
         if (monthDate < startDate || monthDate > now) continue;
         const mk = ym;
         if (!monthMap[mk]) monthMap[mk] = {};
-        if (!monthMap[mk][f]) monthMap[mk][f] = amount;
+        // Only fill when there is NO live value (undefined), not merely a falsy 0,
+        // so a legitimate $0 live month wins over the historical figure.
+        if (monthMap[mk][f] === undefined) monthMap[mk][f] = amount;
       }
     }
     // Backfill All Funds total from historical
@@ -511,7 +586,7 @@ export default function Dashboard() {
       const liveFundMonths = new Set();
       for (const g of rawGifts) {
         if (g.date >= startDate && g.date <= now) {
-          liveFundMonths.add(`${g.fund}|${getMonthKey(g.date)}`);
+          liveFundMonths.add(`${g.fund.toLowerCase().trim()}|${getMonthKey(g.date)}`);
         }
       }
       for (const [fund, months] of Object.entries(HISTORICAL_MONTHLY)) {
@@ -519,7 +594,7 @@ export default function Dashboard() {
           const [y, m] = ym.split("-").map(Number);
           const monthDate = new Date(y, m - 1, 1);
           if (monthDate < startDate || monthDate > now) continue;
-          if (!liveFundMonths.has(`${fund}|${ym}`)) {
+          if (!liveFundMonths.has(`${fund.toLowerCase().trim()}|${ym}`)) {
             if (!allFundsMonthMap[ym]) allFundsMonthMap[ym] = 0;
             allFundsMonthMap[ym] += amount;
           }
@@ -573,6 +648,59 @@ export default function Dashboard() {
     return t;
   }, [filteredData, selectedFunds, loaded, showAllFundsTotal]);
 
+  // Honest per-fund trend: this fund's giving this period vs the SAME fund's giving
+  // in the equivalent prior period (completed months only). Replaces the old
+  // regression-slope percent, which clamped to a misleading 0.0% for funds that
+  // are near-zero most of the year then spike once. A fund with no prior-period
+  // giving reads "New" instead of a fake 0.0%.
+  const fundTrends = useMemo(() => {
+    if (!loaded) return { map: {}, label: "" };
+    const pb = periodBuckets(timeRange, new Date());
+    if (!pb) return { map: {}, label: "" };
+    const sumFund = (buckets, fund) =>
+      buckets.reduce((s, b) => s + (giftIndex.byFund[`${fund}|${b.y}|${b.m}`] || 0), 0);
+    const map = {};
+    for (const f of selectedFunds) {
+      const cur = sumFund(pb.current, f);
+      const pri = sumFund(pb.prior, f);
+      if (cur === 0 && pri === 0) { map[f] = { kind: "none" }; continue; }
+      if (pri === 0) { map[f] = { kind: "new", current: cur }; continue; }
+      map[f] = { kind: "pct", pct: ((cur - pri) / pri) * 100, current: cur, prior: pri };
+    }
+    return { map, label: pb.label };
+  }, [giftIndex, selectedFunds, timeRange, loaded]);
+
+  // Fund-totals table: every fund's total for the selected range, plus the grand
+  // total. Uses the same gift index the chart uses, so the numbers tie out.
+  const fundTotalsTable = useMemo(() => {
+    if (!loaded || funds.length === 0 || timeRange === "yoy" || timeRange === "fyCompare") return null;
+    const now = new Date();
+    let startDate;
+    if (timeRange === "last12") startDate = new Date(now.getFullYear() - 1, now.getMonth() + 1, 1);
+    else if (timeRange === "ytd") startDate = new Date(now.getFullYear(), 0, 1);
+    else if (timeRange === "fy") startDate = getFYStart(now);
+    else if (timeRange === "last24") startDate = new Date(now.getFullYear() - 2, now.getMonth() + 1, 1);
+    else startDate = new Date(DATA_FLOOR);
+    if (startDate < DATA_FLOOR) startDate = new Date(DATA_FLOOR);
+    const months = [];
+    let cur = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+    while (cur <= now) { months.push({ y: cur.getFullYear(), m: cur.getMonth() }); cur.setMonth(cur.getMonth() + 1); }
+    const rows = [];
+    for (const f of funds) {
+      let tot = 0;
+      for (const b of months) tot += giftIndex.byFund[`${f}|${b.y}|${b.m}`] || 0;
+      if (tot !== 0) rows.push({ fund: f, total: tot });
+    }
+    rows.sort((a, b) => b.total - a.total);
+    let grand = 0;
+    for (const b of months) grand += giftIndex.allFunds[`${b.y}|${b.m}`] || 0;
+    const label = {
+      fy: "This Fiscal Year", ytd: "Year to Date",
+      last12: "Last 12 Months", last24: "Last 24 Months", all: "Since Jul 2019",
+    }[timeRange] || "Selected Range";
+    return { rows, grand, label };
+  }, [giftIndex, funds, timeRange, loaded]);
+
   // ─── YoY comparison data (calendar year: 2025 vs 2026) ───
   const yoyData = useMemo(() => {
     if (!loaded || rawGifts.length === 0 || timeRange !== "yoy") return [];
@@ -583,7 +711,8 @@ export default function Dashboard() {
     const rows = MONTHS.map((label, monthIdx) => {
       // Only include months up to the current month in the current year
       if (monthIdx > currentMonth) return null;
-      const row = { month: label };
+      // Mark the current (still-incomplete) month so it is not read as a real YoY decline.
+      const row = { month: monthIdx === currentMonth ? `${label}*` : label };
       for (const yr of calYears) {
         for (const fund of selectedFunds) {
           const key = `${fund} (${yr})`;
@@ -607,9 +736,12 @@ export default function Dashboard() {
 
   const yoyTotals = useMemo(() => {
     if (timeRange !== "yoy" || yoyData.length === 0) return {};
+    // Exclude the current partial month (the last row, flagged with "*") so both
+    // years' totals cover the same completed months — a fair YTD comparison.
+    const completed = yoyData.length > 1 ? yoyData.slice(0, -1) : yoyData;
     const t = {};
     for (const key of yoySeriesKeys) {
-      t[key] = yoyData.reduce((sum, row) => sum + (row[key] || 0), 0);
+      t[key] = completed.reduce((sum, row) => sum + (row[key] || 0), 0);
     }
     return t;
   }, [yoyData, yoySeriesKeys, timeRange]);
@@ -638,8 +770,9 @@ export default function Dashboard() {
         const fyLabel = `FY${String(fyStart).slice(2)}-${String(fyStart + 1).slice(2)}`;
         for (const fund of selectedFunds) {
           const key = `${fund} (${fyLabel})`;
-          // Skip future months but don't break — other FYs may have data
-          if (monthDate > now) { row[key] = 0; continue; }
+          // Future months: use null (not 0) so the current-FY line ENDS at the last
+          // real month instead of plunging to the axis and drawing a false cliff.
+          if (monthDate > now) { row[key] = null; continue; }
           row[key] = giftIndex.byFund[`${fund}|${calYear}|${calMonth}`] || 0;
         }
       }
@@ -665,11 +798,24 @@ export default function Dashboard() {
 
   // fyCompareColorMap is computed below, after fundColorMap is defined
 
+  // FY-month index of the current (partial) month, and the last fully-completed
+  // FY month. Used to clip every fiscal year to the same elapsed window so the
+  // summary cards never compare a partial current FY against full prior FYs.
+  const fyThroughLabel = useMemo(() => {
+    const lastIdx = ((new Date().getMonth() + 6) % 12) - 1;
+    return lastIdx >= 0 ? FY_MONTHS[lastIdx] : null;
+  }, []);
+
   const fyCompareTotals = useMemo(() => {
     if (timeRange !== "fyCompare" || fyCompareData.length === 0) return {};
+    const lastCompletedIdx = ((new Date().getMonth() + 6) % 12) - 1; // exclude current partial month
     const t = {};
     for (const key of fyCompareSeriesKeys) {
-      t[key] = fyCompareData.reduce((sum, row) => sum + (row[key] || 0), 0);
+      t[key] = fyCompareData.reduce((sum, row) => {
+        const idx = FY_MONTHS.indexOf(row.month);
+        if (idx < 0 || idx > lastCompletedIdx) return sum; // same-period clip across all FYs
+        return sum + (row[key] || 0);
+      }, 0);
     }
     return t;
   }, [fyCompareData, fyCompareSeriesKeys, timeRange]);
@@ -745,8 +891,22 @@ export default function Dashboard() {
   };
 
   const goHome = () => { setLoaded(false); setRawGifts([]); setFunds([]); setFileName(null); setError(null); setFyRevenue(""); setFyExpenses(""); setFyCalced(false); setDataLoadedAt(null); setIsOffertoryOnly(false); setShowAllFundsTotal(false); setUseLogScale(false); };
-  const selectAll = () => setSelectedFunds(new Set(funds));
-  const selectNone = () => setSelectedFunds(new Set());
+  // Type-to-filter the fund list. When a search is active, All/None act on just
+  // the matching funds; with no search they keep their original all-funds behavior.
+  const fundQuery = fundSearch.trim().toLowerCase();
+  const visibleFunds = fundQuery ? funds.filter(f => f.toLowerCase().includes(fundQuery)) : funds;
+  const selectAll = () => setSelectedFunds(prev => {
+    if (!fundQuery) return new Set(funds);
+    const next = new Set(prev);
+    for (const f of visibleFunds) next.add(f);
+    return next;
+  });
+  const selectNone = () => setSelectedFunds(prev => {
+    if (!fundQuery) return new Set();
+    const next = new Set(prev);
+    for (const f of visibleFunds) next.delete(f);
+    return next;
+  });
   const fmt = (v) => v >= 1000 ? `$${(v/1000).toFixed(1)}k` : `$${v.toFixed(0)}`;
   const fmtFull = (v) => `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -809,6 +969,19 @@ export default function Dashboard() {
   const ALL_FUNDS_TOTAL_KEY = "All Funds (Total)";
   const ALL_FUNDS_TOTAL_COLOR = "#333333";
   const activeFunds = [...selectedFunds].sort();
+
+  // For the log axis a $0 month cannot be plotted, and the line would otherwise
+  // connect straight across it, making a sparse fund look continuously funded.
+  // Swap zeros for null so the line shows an honest gap at $0 months.
+  const logSafeChartData = useMemo(() => {
+    if (!useLogScale) return chartData;
+    const keys = [...selectedFunds, ALL_FUNDS_TOTAL_KEY];
+    return chartData.map(row => {
+      const r = { ...row };
+      for (const k of keys) if (r[k] === 0) r[k] = null;
+      return r;
+    });
+  }, [chartData, useLogScale, selectedFunds]);
   if (showAllFundsTotal) fundColorMap[ALL_FUNDS_TOTAL_KEY] = ALL_FUNDS_TOTAL_COLOR;
 
   // ─── UPLOAD SCREEN ───
@@ -1119,7 +1292,11 @@ export default function Dashboard() {
       )}
       {/* YoY Totals */}
       {activeFunds.length > 0 && (timeRange === "yoy") && (
-        <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 14, color: "#999", marginBottom: 8, fontFamily: sans }}>
+            Totals cover completed months only; the current month (marked * on the chart) is still in progress and is left out so both years compare the same window.
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           {yoySeriesKeys.map(key => (
             <div key={key} style={{
               padding: "10px 18px", background: "#fff",
@@ -1134,12 +1311,19 @@ export default function Dashboard() {
               </div>
             </div>
           ))}
+          </div>
         </div>
       )}
 
       {/* FY Compare Totals */}
       {activeFunds.length > 0 && timeRange === "fyCompare" && (
-        <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
+        <div style={{ marginBottom: 18 }}>
+          {fyThroughLabel && (
+            <div style={{ fontSize: 14, color: "#999", marginBottom: 8, fontFamily: sans }}>
+              Totals compare each fiscal year through {fyThroughLabel} (completed months only), so the current partial year is measured against the same window in prior years.
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           {fyCompareSeriesKeys.map(key => (
             <div key={key} style={{
               padding: "10px 18px", background: "#fff",
@@ -1154,6 +1338,7 @@ export default function Dashboard() {
               </div>
             </div>
           ))}
+          </div>
         </div>
       )}
 
@@ -1355,10 +1540,10 @@ export default function Dashboard() {
               {activeFunds.length === 0 && !showAllFundsTotal ? "Select at least one fund below." : "No data for the selected range."}
             </div>
           ) : (
-            <><span style={{display:"none"}}>{(() => { resetSmartLabels(chartData.length); return ""; })()}</span>
+            <><span style={{display:"none"}}>{(() => { resetSmartLabels(chartData.length, Math.max(0, ...chartData.flatMap(d => activeFunds.map(f => d[f] || 0)))); return ""; })()}</span>
             <ResponsiveContainer width="100%" height={activeFunds.length > 8 ? 500 : 370}>
               {chartType === "line" ? (
-                <LineChart data={chartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
+                <LineChart data={logSafeChartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}15`} />
                   <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
                   <YAxis type="number" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 14, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
@@ -1393,7 +1578,7 @@ export default function Dashboard() {
                   ))}
                 </LineChart>
               ) : (
-                <BarChart data={chartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
+                <BarChart data={logSafeChartData} margin={{ top: 20, right: 20, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={`${SE_GREEN}15`} />
                   <XAxis dataKey="month" tick={{ fill: "#888", fontSize: 16, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false} interval="preserveStartEnd" />
                   <YAxis type="number" tickFormatter={fmt} tick={{ fill: "#888", fontSize: 14, fontFamily: sans }} axisLine={{ stroke: `${SE_GREEN}20` }} tickLine={false}
@@ -1422,24 +1607,20 @@ export default function Dashboard() {
         )}
       </div>}
 
-      {/* Trend indicator — hide when too many funds to keep it readable */}
-      {viewMode === "chart" && timeRange !== "yoy" && timeRange !== "fyCompare" && activeFunds.length <= 6 && Object.keys(trendPcts).length > 0 && (
+      {/* Per-fund trend: this fund vs the SAME fund a year ago (completed months only).
+          Hidden for the full-history "all" view and when too many funds are selected. */}
+      {viewMode === "chart" && timeRange !== "yoy" && timeRange !== "fyCompare" && timeRange !== "all" && activeFunds.length <= 6 && Object.keys(fundTrends.map).length > 0 && (
         <div style={{
           display: "flex", gap: 12, marginBottom: 14, flexWrap: "wrap"
         }}>
           {activeFunds.map(f => {
-            const pct = trendPcts[f];
-            if (pct == null) return null;
-            const up = pct >= 0;
+            const t = fundTrends.map[f];
+            if (!t || t.kind === "none") return null;
+            const isNew = t.kind === "new";
+            const up = isNew || t.pct >= 0;
             const color = up ? SE_GREEN : "#c0392b";
             const arrow = up ? "▲" : "▼";
-            const rangeLabel = {
-              last12: "over last 12 months",
-              last24: "over last 24 months",
-              ytd: "year to date",
-              fy: "this fiscal year",
-              all: "since Jan 2025"
-            }[timeRange] || "in this view";
+            const newLabel = timeRange === "fy" ? "New this FY" : "New";
             return (
               <div key={f} style={{
                 display: "flex", alignItems: "center", gap: 6,
@@ -1452,13 +1633,73 @@ export default function Dashboard() {
                   background: fundColorMap[f]
                 }} />
                 <span style={{ color: "#666" }}>{f}:</span>
-                <span style={{ fontWeight: 700, color, fontSize: 18 }}>
-                  {arrow} {Math.abs(pct).toFixed(1)}%
-                </span>
-                <span style={{ color: "#999", fontSize: 16 }}>{rangeLabel}</span>
+                {isNew ? (
+                  <span style={{ fontWeight: 700, color: SE_GREEN, fontSize: 18 }}>▲ {newLabel}</span>
+                ) : (
+                  <>
+                    <span style={{ fontWeight: 700, color, fontSize: 18 }}>
+                      {arrow} {Math.abs(t.pct).toFixed(1)}%
+                    </span>
+                    <span style={{ color: "#999", fontSize: 16 }}>{fundTrends.label}</span>
+                  </>
+                )}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Fund Totals Table — every fund's total for the selected range */}
+      {fundTotalsTable && (
+        <div style={{
+          background: "#fff", border: `1px solid ${SE_GREEN}12`,
+          borderRadius: 8, padding: "14px 18px", marginBottom: 18,
+          boxShadow: "0 1px 4px rgba(0,89,33,0.04)"
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10, gap: 12, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 18, fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif }}>Fund Totals</span>
+            <span style={{ fontSize: 14, color: "#999", fontFamily: sans }}>{fundTotalsTable.label}</span>
+          </div>
+          <div style={{ maxHeight: 360, overflowY: "auto", border: `1px solid ${SE_GREEN}12`, borderRadius: 6 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: sans, fontSize: 14 }}>
+              <tbody>
+                <tr style={{ position: "sticky", top: 0, background: "#eef4f1" }}>
+                  <td style={{ padding: "9px 14px", fontWeight: 700, color: SE_GREEN_DARK }}>All Funds</td>
+                  <td style={{ padding: "9px 14px", fontWeight: 700, color: SE_GREEN_DARK, textAlign: "right", fontFamily: serif, fontSize: 16, whiteSpace: "nowrap" }}>
+                    {fmtFull(fundTotalsTable.grand)}
+                  </td>
+                </tr>
+                {fundTotalsTable.rows.map(({ fund, total }) => {
+                  const active = selectedFunds.has(fund);
+                  return (
+                    <tr
+                      key={fund}
+                      onClick={() => toggleFund(fund)}
+                      title="Click to add or remove this fund from the chart"
+                      style={{
+                        cursor: "pointer",
+                        background: active ? `${fundColorMap[fund] || SE_GREEN}12` : "transparent",
+                        borderTop: "1px solid #f1f1f1"
+                      }}
+                    >
+                      <td style={{ padding: "8px 14px", color: "#444" }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ width: 9, height: 9, borderRadius: 2, background: fundColorMap[fund] || "#ccc" }} />
+                          {fund}
+                        </span>
+                      </td>
+                      <td style={{ padding: "8px 14px", textAlign: "right", color: SE_GREEN_DARK, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                        {fmtFull(total)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: 13, color: "#aaa", marginTop: 8, fontFamily: sans }}>
+            {fundTotalsTable.rows.length} fund{fundTotalsTable.rows.length === 1 ? "" : "s"} with giving in this range. Click a row to add it to the chart.
+          </div>
         </div>
       )}
 
@@ -1468,16 +1709,43 @@ export default function Dashboard() {
         borderRadius: 8, padding: "14px 18px",
         boxShadow: "0 1px 4px rgba(0,89,33,0.04)"
       }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 12, flexWrap: "wrap" }}>
           <span style={{ fontSize: 18, fontWeight: 700, color: SE_GREEN_DARK, fontFamily: serif }}>Funds</span>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={selectAll} style={{ background: "none", border: "none", color: SE_GREEN, fontSize: 16, cursor: "pointer", fontWeight: 600 }}>All</button>
-            <span style={{ color: "#ccc" }}>|</span>
-            <button onClick={selectNone} style={{ background: "none", border: "none", color: SE_GREEN, fontSize: 16, cursor: "pointer", fontWeight: 600 }}>None</button>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flex: "1 1 280px", justifyContent: "flex-end" }}>
+            <div style={{ position: "relative", flex: "1 1 200px", maxWidth: 320 }}>
+              <input
+                type="text"
+                value={fundSearch}
+                onChange={(e) => setFundSearch(e.target.value)}
+                placeholder="Search funds…"
+                style={{
+                  width: "100%", boxSizing: "border-box",
+                  padding: "7px 28px 7px 12px", borderRadius: 6,
+                  border: `1px solid ${SE_GREEN}30`, fontSize: 14, fontFamily: sans,
+                  color: SE_GREEN_DARK, outline: "none"
+                }}
+              />
+              {fundSearch && (
+                <button
+                  onClick={() => setFundSearch("")}
+                  aria-label="Clear search"
+                  style={{
+                    position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+                    background: "none", border: "none", color: "#999", cursor: "pointer",
+                    fontSize: 16, lineHeight: 1, padding: 2
+                  }}
+                >×</button>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8, whiteSpace: "nowrap" }}>
+              <button onClick={selectAll} style={{ background: "none", border: "none", color: SE_GREEN, fontSize: 16, cursor: "pointer", fontWeight: 600 }}>All</button>
+              <span style={{ color: "#ccc" }}>|</span>
+              <button onClick={selectNone} style={{ background: "none", border: "none", color: SE_GREEN, fontSize: 16, cursor: "pointer", fontWeight: 600 }}>None</button>
+            </div>
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "4px 8px" }}>
-          {!isOffertoryOnly && (
+          {!isOffertoryOnly && !fundQuery && (
             <button
               onClick={() => setShowAllFundsTotal(prev => !prev)}
               style={{
@@ -1499,7 +1767,12 @@ export default function Dashboard() {
               All Funds (Total)
             </button>
           )}
-          {funds.map(f => {
+          {fundQuery && visibleFunds.length === 0 && (
+            <div style={{ gridColumn: "1 / -1", padding: "10px 4px", color: "#999", fontSize: 14, fontFamily: sans }}>
+              No funds match “{fundSearch}”.
+            </div>
+          )}
+          {visibleFunds.map(f => {
             const active = selectedFunds.has(f);
             const color = fundColorMap[f];
             return (
