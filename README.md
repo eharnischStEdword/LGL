@@ -10,6 +10,21 @@ Data is pulled live from LGL via scheduled permanent links, topped up with real-
 2. **API top-up** — After loading the permanent link data, the dashboard fetches any gifts added or updated since the report was generated, so data is current to the minute.
 3. **Two views** — "Load Offertory Data" (Offertory fund only, server-parsed with API top-up) and "Load All Funds Report" (all funds, client-parsed with API top-up).
 
+## Dashboard features
+
+- **Time ranges:** Fiscal Year (starts July 1), Year to Date, Last 12 and Last 24 Months, All (since July 2019), plus Year-over-Year and multi-year Fiscal Year comparison views.
+- **Per-fund trend badge:** for each selected fund, shows that fund's giving this period versus the same fund's giving in the equivalent prior-year window, using completed months only. A brand-new fund reads "New this FY" instead of a misleading percentage. This is a true period-over-period comparison, not the slope of a trendline.
+- **Fund search:** type to filter the fund list. While a search is active, the All and None buttons act on the matching funds only.
+- **Fund Totals table:** every fund's total for the selected range, sorted highest to lowest, with an All Funds grand total on top. Click any row to add or remove that fund from the chart.
+- **Chart options:** line or bar, an optional logarithmic scale for comparing funds of very different sizes (months with $0 appear as a gap, since zero cannot plot on a log axis), and collision-aware data labels that always keep a fund's largest spike labeled.
+- **Financial Snapshot:** a bulletin-ready summary of monthly Offertory with month-over-month and year-over-year comparisons, plus a copy-to-clipboard button.
+
+## Data correctness notes
+
+- Gift dates from the LGL API (date-only ISO strings) are parsed in local time, so a gift dated on the first of a month is not shifted into the previous month, and a July 1 gift is not shifted into the previous fiscal year.
+- Year-over-Year and Fiscal Year comparisons clip every year to the same number of completed months, so a partial current year is never measured against full prior years. The current in-progress month is marked with an asterisk and held out of comparison totals.
+- Historical monthly totals (pre-2025, from the PDS/Pushpay import) backfill only the months where LGL has no live data, matched case-insensitively so a fund is never double-counted in the All Funds total.
+
 ## Architecture
 
 - **Frontend:** React 18, Vite 6, Recharts (charts), SheetJS (spreadsheet parsing)
@@ -72,6 +87,13 @@ This is a **Web Service** (not a Static Site) because it has a Node.js backend.
 5. Add all environment variables from the table above
 
 Auto-deploys on every push to main.
+
+## Known limitations
+
+These are documented and intentionally deferred:
+
+- The recent-gifts API top-up filters by gift **update** date, but the dashboard buckets gifts by gift (**received**) date. A gift received after the daily report yet last edited before it can be missed until the next export catches it. Switching the query in `server.js` to `gift_date_from` is the fix, and it needs validation against a live LGL API key first so the top-up is not silently disabled.
+- The Year-over-Year view currently hardcodes calendar years 2025 and 2026.
 
 ## Brand colors
 

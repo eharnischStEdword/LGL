@@ -28,6 +28,10 @@ Push to main branch. Render auto-deploys from GitHub.
   - Microsoft Entra ID SSO with email allow-list
 - Recharts for charts, SheetJS (xlsx) for spreadsheet parsing
 - No router, no state management library
+- All Funds permanent link is delivered by LGL as a .zip wrapping a .csv;
+  proxyLGL unwraps it server-side (extractCsvFromZip, Node zlib) and forwards CSV
+- Fund list has a type-to-filter search; a Fund Totals table lists every fund's
+  total for the selected range (click a row to chart that fund)
 
 ## Environment Variables (Render)
 - CLIENT_ID, CLIENT_SECRET, TENANT_ID — Microsoft Entra SSO
@@ -46,6 +50,9 @@ Push to main branch. Render auto-deploys from GitHub.
 
 ## Key Facts
 - Fiscal year starts July 1
+- Gift dates from the API (ISO date-only strings) are parsed in LOCAL time, not
+  UTC, so boundary gifts (the 1st of a month, July 1) land in the correct
+  month and fiscal year (parseDateFlexible)
 - Dashboard auto-selects "Offertory" fund if found
 - Two LGL scheduled reports feed the dashboard (Offertory-only and All Funds)
 - When a new fund is added in LGL, manually add it to the FULL GIVING REPORT's fund selection
@@ -64,12 +71,34 @@ Push to main branch. Render auto-deploys from GitHub.
   rawGifts only contains Offertory data — the total would be misleading
 
 ## Chart Behavior
-- SmartDataLabel: collision-aware labels that skip overlapping text (40px h / 16px v gap)
+- Per-fund trend badge (shown for <=6 funds, hidden on the All-history view):
+  shows this fund's giving this period vs the SAME fund's giving in the equivalent
+  prior-year window, completed months only. A new fund reads "New this FY".
+  This replaced the old regression-slope percent, which clamped to a misleading
+  0.0% for funds that spike late and could even point the wrong direction. The
+  regression line (computeTrend) is kept ONLY as the dashed visual trendline; the
+  badge number comes from periodBuckets + fundTrends.
+- SmartDataLabel: collision-aware labels that skip overlapping text by index, but
+  always keep the series' largest spike labeled. Negative months format as -$1.2k.
 - Standard chart uses DataLabel for YoY/FY Compare (fewer points), SmartDataLabel otherwise
 - When >6 funds selected: totals collapse to summary, trend badges hidden
 - When >8 funds selected: chart legend hidden, chart height increases to 500px
-- Log scale toggle available for mixed-magnitude fund comparisons
-- Dual Y-axis (left + right) on standard chart; all data bound to left axis
+- Log scale toggle for mixed-magnitude comparisons; $0 months render as a gap
+  (logSafeChartData) because zero cannot plot on a log axis
+- FY Compare and YoY clip every fiscal/calendar year to the same completed-month
+  window so a partial current year is not compared against full prior years; the
+  in-progress month is excluded from comparison totals (marked * on the YoY chart)
+- Single left Y-axis (the earlier right axis was removed)
+
+## Deferred / Known Issues (flagged 2026-06-21, intentionally not fixed)
+A 2026-06-21 multi-agent audit found 17 confirmed correctness bugs. All but the
+two below were fixed in commit 2f0a3e8. The trend-metric and date/timezone fixes
+changed some reported numbers, so screenshots taken before that date may differ.
+- server.js recent-gifts query filters by gift UPDATE date (q[] updated_from) but
+  the dashboard buckets by gift RECEIVED date. Correct axis is gift_date_from;
+  left unverified to avoid silently disabling the live top-up without a live-key
+  test. See the NOTE comment in fetchLGLApiGifts.
+- YoY view hardcodes calendar years 2025/2026 (will mislabel after July 2026).
 
 ## User
 Eric is not a developer. Explain before running destructive commands.
