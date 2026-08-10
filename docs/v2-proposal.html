@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>St. Edward Giving Dashboard v2 Proposal</title>
+<style>
+  :root {
+    --page: #EEF4F1;
+    --card: #ffffff;
+    --ink: #22302a;
+    --ink-2: #5a6b60;
+    --ink-3: #8a978e;
+    --green: #00843D;
+    --green-dark: #005921;
+    --gold: #DAAA00;
+    --gold-light: #DDCC71;
+    --blue: #003764;
+    --red: #B23A2F;
+    --chart-blue: #2A6FB0;
+    --chart-gold: #B8860B;
+    --hairline: #dde6e0;
+    --serif: Georgia, 'Times New Roman', serif;
+    --sans: 'Trebuchet MS', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font-family: var(--sans); font-size: 15px; line-height: 1.55;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 32px 24px 80px; }
+
+  /* ── document chrome ── */
+  .masthead { display: flex; align-items: center; gap: 14px; padding-bottom: 18px; border-bottom: 2px solid var(--green); margin-bottom: 8px; }
+  .cross { width: 44px; height: 44px; border-radius: 50%; background: var(--green); color: #fff; display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-size: 22px; flex-shrink: 0; }
+  .masthead h1 { font-family: var(--serif); font-size: 26px; color: var(--green-dark); margin: 0; line-height: 1.15; }
+  .masthead .sub { font-size: 13px; color: var(--ink-2); letter-spacing: 0.08em; text-transform: uppercase; margin-top: 2px; }
+  .dateline { margin-left: auto; text-align: right; font-size: 13px; color: var(--ink-3); }
+
+  h2 { font-family: var(--serif); font-size: 21px; color: var(--green-dark); margin: 44px 0 6px; }
+  h2 .no { color: var(--gold); margin-right: 8px; }
+  h3 { font-family: var(--serif); font-size: 16px; color: var(--green-dark); margin: 22px 0 6px; }
+  p { margin: 8px 0; max-width: 74ch; }
+  .lede { font-size: 17px; max-width: 78ch; }
+  .lede strong { color: var(--green-dark); }
+  ul { margin: 8px 0; padding-left: 22px; max-width: 74ch; }
+  li { margin: 4px 0; }
+  .muted { color: var(--ink-2); }
+  .small { font-size: 13px; }
+
+  .card { background: var(--card); border: 1px solid var(--hairline); border-radius: 10px; padding: 18px 20px; margin: 14px 0; box-shadow: 0 1px 3px rgba(0,89,33,0.05); }
+
+  /* ── mockup framing ── */
+  .mock { background: var(--page); border: 1px solid var(--hairline); border-radius: 12px; padding: 18px; margin: 16px 0; overflow-x: auto; }
+  .mock-tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--card); background: var(--blue); border-radius: 4px; padding: 2px 8px; margin-bottom: 12px; }
+  .mock-inner { min-width: 620px; }
+  .annot { font-size: 13px; color: var(--ink-2); margin-top: 12px; max-width: 78ch; }
+  .annot b { color: var(--green-dark); }
+
+  /* ── shared v2 pieces ── */
+  .pill { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 9px; vertical-align: middle; white-space: nowrap; }
+  .pill-scope { background: #faf3d8; color: #7a6206; border: 1px solid var(--gold-light); }
+  .pill-complete { background: #e3f2e9; color: var(--green-dark); }
+  .pill-counting { background: #faf3d8; color: #7a6206; border: 1px dashed var(--gold); }
+  .delta-up { color: var(--green); font-weight: 700; }
+  .delta-down { color: var(--red); font-weight: 700; }
+  .money { font-family: var(--serif); color: var(--green-dark); }
+
+  .sev { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; border-radius: 4px; padding: 2px 7px; text-transform: uppercase; margin-right: 8px; vertical-align: 2px; }
+  .sev-hi { background: #f6e2df; color: var(--red); }
+  .sev-med { background: #faf3d8; color: #7a6206; }
+
+  /* page-order strip */
+  .order-strip { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+  .order-strip .step { background: var(--card); border: 1px solid var(--hairline); border-left: 4px solid var(--green); border-radius: 8px; padding: 10px 14px; flex: 1 1 160px; min-width: 150px; }
+  .order-strip .step .k { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  .order-strip .step .t { font-family: var(--serif); font-size: 15px; color: var(--green-dark); margin-top: 2px; }
+  .order-strip .step .d { font-size: 12.5px; color: var(--ink-2); margin-top: 3px; line-height: 1.4; }
+
+  /* answer band mock */
+  .band { display: grid; grid-template-columns: 1.2fr 1.2fr 1fr; gap: 12px; }
+  @media (max-width: 720px) { .band { grid-template-columns: 1fr; } .mock-inner { min-width: 0; } }
+  .ablock { background: var(--card); border: 1px solid var(--hairline); border-radius: 10px; padding: 14px 16px; }
+  .ablock .q { font-family: var(--serif); font-style: italic; font-size: 14.5px; color: var(--ink-2); margin-bottom: 8px; }
+  .ablock .big { font-family: var(--serif); font-size: 34px; color: var(--green-dark); line-height: 1.05; }
+  .ablock .ctx { font-size: 12.5px; color: var(--ink-3); margin-top: 2px; }
+  .ablock .deltas { margin-top: 8px; font-size: 13px; display: flex; flex-direction: column; gap: 3px; }
+  .mover { display: flex; justify-content: space-between; font-size: 13.5px; padding: 5px 0; border-bottom: 1px solid #f1f5f2; }
+  .mover:last-child { border-bottom: none; }
+  .btn-mock { display: inline-block; margin-top: 10px; background: var(--green); color: #fff; font-size: 12.5px; font-weight: 700; border-radius: 6px; padding: 6px 12px; }
+
+  /* freshness header mock */
+  .fresh { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--hairline); border-radius: 8px; padding: 9px 14px; margin-bottom: 12px; font-size: 13px; color: var(--ink-2); flex-wrap: wrap; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .dot-amber { background: var(--gold); box-shadow: 0 0 0 3px #daaa0022; }
+
+  /* weekly bars mock */
+  .weekly-card { background: var(--card); border: 1px solid var(--hairline); border-radius: 10px; padding: 16px 18px; margin-top: 12px; }
+  .weekly-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .weekly-head .t { font-family: var(--serif); font-size: 17px; color: var(--green-dark); }
+  .counting-banner { background: #fbf6e2; border: 1px solid var(--gold-light); border-radius: 6px; font-size: 12.5px; color: #6d5a0a; padding: 7px 12px; margin: 8px 0 14px; }
+  .bars { position: relative; display: flex; align-items: flex-end; gap: 14px; height: 190px; padding: 0 4px; margin-top: 26px; }
+  .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; position: relative; }
+  .bar { width: 100%; max-width: 44px; border-radius: 4px 4px 0 0; background: var(--green); position: relative; }
+  .bar-label { font-size: 11px; color: var(--ink-2); margin-bottom: 4px; font-family: var(--sans); }
+  .bar-x { font-size: 11px; color: var(--ink-3); margin-top: 6px; text-align: center; line-height: 1.25; }
+  .bar-hl { background: var(--green-dark); }
+  .bar-prov { background: repeating-linear-gradient(45deg, #daaa0055 0 5px, #fff 5px 10px); border: 1.5px dashed var(--gold); border-bottom: none; }
+  .avg-line { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--blue); opacity: 0.65; }
+  .bars-legend { font-size: 11.5px; color: var(--ink-2); margin-top: 10px; }
+  .bars-legend .key { display: inline-block; width: 22px; border-top: 2px dashed var(--blue); vertical-align: 3px; margin-right: 5px; }
+  .pace { margin-top: 14px; background: #eef3f8; border: 1px solid #d7e2ec; border-radius: 6px; padding: 8px 12px; font-size: 13px; color: var(--blue); }
+
+  /* compare before/after */
+  .ba { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 760px) { .ba { grid-template-columns: 1fr; } }
+  .ba-col .ba-tag { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
+  .ba-before .ba-tag { color: var(--red); }
+  .ba-after .ba-tag { color: var(--green); }
+  .v1-caveat { font-size: 11.5px; color: #9aa39d; margin-bottom: 8px; max-width: 46ch; }
+  .v1-card { background: var(--card); border: 1px solid var(--hairline); border-left: 4px solid var(--green); border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; }
+  .v1-card .l { font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); }
+  .v1-card .v { font-family: var(--serif); font-size: 19px; color: var(--green-dark); }
+  .cmp-card { background: var(--card); border: 1px solid var(--hairline); border-left: 4px solid var(--green); border-radius: 8px; padding: 12px 14px; }
+  .cmp-title { font-size: 13.5px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+  .cmp-row { display: flex; align-items: baseline; gap: 10px; padding: 4px 0; }
+  .cmp-row .yr { font-size: 12.5px; color: var(--ink-3); width: 96px; flex-shrink: 0; }
+  .cmp-row .amt-sm { font-family: var(--serif); font-size: 15px; color: var(--ink-2); }
+  .cmp-row .amt-lg { font-family: var(--serif); font-size: 24px; color: var(--green-dark); }
+  .verdict { font-size: 13.5px; margin-top: 6px; }
+  .info-i { display: inline-block; width: 15px; height: 15px; border-radius: 50%; border: 1px solid var(--ink-3); color: var(--ink-3); font-size: 10px; text-align: center; line-height: 14px; font-family: var(--serif); font-style: italic; vertical-align: 1px; }
+
+  /* ledger mock */
+  .ledger-head { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--hairline); border-radius: 8px; padding: 10px 14px; font-size: 14px; color: var(--green-dark); font-weight: 700; }
+  .ledger { background: var(--card); border: 1px solid var(--hairline); border-radius: 0 0 8px 8px; border-top: none; margin: 0 8px; }
+  .lrow { display: grid; grid-template-columns: 22px 1fr 110px 130px; gap: 10px; align-items: center; padding: 7px 14px; border-bottom: 1px solid #f1f5f2; font-size: 13.5px; }
+  .lrow:last-child { border-bottom: none; }
+  .lrow .amt { text-align: right; font-family: var(--serif); color: var(--green-dark); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .share { height: 7px; border-radius: 4px; background: #e7eee9; overflow: hidden; }
+  .share i { display: block; height: 100%; background: var(--green); border-radius: 4px; }
+  .lrow-all { background: #eef3f8; font-weight: 700; }
+  .lrow-all .amt { color: var(--blue); }
+  .cb { width: 15px; height: 15px; border: 1.5px solid #b9c6bd; border-radius: 4px; }
+  .cb-on { background: var(--green); border-color: var(--green); position: relative; }
+  .cb-on::after { content: "✓"; color: #fff; font-size: 11px; position: absolute; top: -2px; left: 2px; }
+
+  /* color language table */
+  table.lang { border-collapse: collapse; width: 100%; font-size: 13.5px; margin: 10px 0; }
+  table.lang th { text-align: left; padding: 7px 10px; border-bottom: 2px solid var(--hairline); color: var(--green-dark); font-family: var(--serif); }
+  table.lang td { padding: 7px 10px; border-bottom: 1px solid #f1f5f2; vertical-align: top; }
+  .sw { display: inline-block; width: 13px; height: 13px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+
+  /* build order */
+  .buildstep { display: flex; gap: 14px; margin: 10px 0; align-items: flex-start; }
+  .buildstep .n { width: 30px; height: 30px; border-radius: 50%; background: var(--green); color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px; }
+  .buildstep.gate .n { background: var(--gold); color: #4d3f04; }
+  .buildstep .b { flex: 1; }
+  .buildstep .b .t { font-weight: 700; color: var(--green-dark); }
+
+  .kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px 20px; font-size: 13.5px; }
+  .kv div { padding-left: 20px; position: relative; }
+  .kv div::before { content: "✓"; color: var(--green); position: absolute; left: 0; font-weight: 700; }
+
+  @media print {
+    body { background: #fff; }
+    .wrap { max-width: 100%; padding: 0; }
+    .mock, .card { break-inside: avoid; box-shadow: none; }
+    h2 { break-after: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <div class="cross">&#10013;</div>
+    <div>
+      <h1>Fund Giving Dashboard v2</h1>
+      <div class="sub">Design proposal &middot; St. Edward Church, Nashville</div>
+    </div>
+    <div class="dateline">August 10, 2026<br>Prepared for Eric Harnisch</div>
+  </div>
+
+  <p class="lede" style="margin-top:18px">
+    <strong>The recommendation: one scrolling page that opens by answering the three questions staff
+    walk in with, with a new weekly panel built for the Monday meeting.</strong> No tabs, no rewrite.
+    Every calculation the dashboard makes today survives unchanged; what changes is that the answers
+    move to the top, the caveats become visual marks instead of paragraphs, and the 42-fund wall
+    becomes one ranked list. Three design directions were developed and scored against each other;
+    this is the winning hybrid. The mockups below are working HTML, drawn in the exact visual
+    language v2 would ship.
+  </p>
+
+  <h2><span class="no">1</span>What v1 gets wrong</h2>
+  <p>A full pass over the current interface (grounded in the code, not vibes) found these. The math
+  behind every number checked out; the problems are all presentation and placement.</p>
+
+  <div class="card">
+    <p><span class="sev sev-hi">High</span><b>The comparison views never actually compare.</b>
+    YoY and FY Compare render one look-alike card per fund-year ("Offertory (2025)", "Offertory (2026)").
+    You find the pair, subtract in your head, and judge the gap yourself. The one number the view
+    exists to produce, the difference, is never shown, even though it is already computed.</p>
+    <p><span class="sev sev-hi">High</span><b>The page is upside down for its audience.</b>
+    Above the fold: a logo, a metadata line, ten buttons in three styles, the top of a chart.
+    The only plain-English summary (the Financial Snapshot) is dead last, below the fund chips.
+    The up/down trend verdicts sit under the chart like footnotes.</p>
+    <p><span class="sev sev-hi">High</span><b>There is no weekly view at all.</b>
+    Everything is bucketed by month, so the freshest thing visible on a Monday morning is a partial
+    month, and the Monday question ("how were the last few weeks?") is unanswerable. The gift-level
+    dates needed for weekly totals are already loaded in memory.</p>
+    <p><span class="sev sev-hi">High</span><b>Loading All Funds shows you one fund.</b>
+    The All Funds report auto-selects Offertory only, and the parish-wide total hides behind an
+    unlabeled chip at the bottom of the page, styled like just another fund. Nothing says
+    "you are seeing 1 of 42 funds."</p>
+    <p><span class="sev sev-hi">High</span><b>Two competing 40-row fund controls.</b>
+    The Fund Totals table and the 42-chip selector both toggle chart membership. The chips give a
+    ten-gift mission collection the same weight as Offertory, and unselected chips are light gray
+    on lighter gray.</p>
+    <p><span class="sev sev-med">Medium</span><b>Caveats are paragraphs, not marks.</b>
+    The honest-comparison logic (completed months only, partial month excluded) is explained in
+    30-word gray sentences that get skipped, a full screen away from the asterisk they explain.</p>
+    <p><span class="sev sev-med">Medium</span><b>One flat row of mixed controls.</b>
+    Six time pills (two of which are secretly whole different views), a Chart/Table toggle, Line/Bar,
+    and Log all sit together in four visual styles. The default range is "Last 12 Mo" though parish
+    staff think in fiscal years. A "Last 24 Mo" range exists in code with no button.</p>
+  </div>
+
+  <h2><span class="no">2</span>The shape of v2</h2>
+  <p>Answer first, evidence second, controls on demand. The entry screen goes away (data loads on
+  arrival); the page reads top to bottom in meeting order.</p>
+
+  <div class="order-strip">
+    <div class="step"><div class="k">1 &middot; Answer</div><div class="t">Monday briefing</div>
+      <div class="d">Three questions answered in English, plus the Recent Weeks panel.</div></div>
+    <div class="step"><div class="k">2 &middot; Evidence</div><div class="t">The chart</div>
+      <div class="d">Monthly trend with its regression trendline, Compare Years, or Table.</div></div>
+    <div class="step"><div class="k">3 &middot; Detail</div><div class="t">Fund ledger</div>
+      <div class="d">One ranked list replaces the chip wall and the totals table.</div></div>
+    <div class="step"><div class="k">4 &middot; Utility</div><div class="t">Bulletin &amp; export</div>
+      <div class="d">Copy for Bulletin lives inside the briefing, where the numbers are.</div></div>
+  </div>
+
+  <h2><span class="no">3</span>The Monday briefing</h2>
+  <p>This is the new top of the page, and the reason v2 exists. The week runs Monday through Sunday
+  and is labeled by its ending Sunday, because the Sunday collection is what the week builds toward.
+  On a Monday morning the just-ended week is always still being counted (plate and checks usually
+  post Monday or Tuesday), so it can never be the headline: the last <i>complete</i> week carries
+  the headline and all comparisons, and the counting week is visibly second-class until the
+  Wednesday after its Sunday.</p>
+
+  <div class="mock"><div class="mock-tag">Mockup &middot; top of page, Monday Aug 10</div>
+  <div class="mock-inner">
+
+    <div class="fresh">
+      <span class="dot dot-amber"></span>
+      <span><b>Updated 9:02 AM</b> &middot; Sunday collections usually post Mon&ndash;Tue, so the newest week may still grow.</span>
+      <span style="margin-left:auto" class="small muted">All Funds report &middot; 6,214 gifts &middot; 42 funds</span>
+    </div>
+
+    <div class="band">
+      <div class="ablock">
+        <div class="q">How was giving this week?</div>
+        <div class="big">$23,410</div>
+        <div class="ctx">Week ending Sun, Aug 2 &nbsp;<span class="pill pill-complete">✓ Complete</span></div>
+        <div class="deltas">
+          <span><span class="delta-up">▲ 4.1%</span> <span class="muted">vs same week last year</span></span>
+          <span><span class="delta-up">▲ 2.2%</span> <span class="muted">vs 4-week average</span></span>
+        </div>
+      </div>
+      <div class="ablock">
+        <div class="q">Are we ahead of last year?</div>
+        <div class="big">$121,340</div>
+        <div class="ctx">FY 2026&ndash;27 to date &nbsp;<span class="pill pill-scope">through Jul &middot; completed months</span></div>
+        <div class="deltas">
+          <span><span class="delta-up">▲ +$7,130 (+6.2%)</span> <span class="muted">vs last FY, same window</span></span>
+          <span class="muted">Last year at this point: <span class="money">$114,210</span></span>
+        </div>
+        <span class="btn-mock">Copy for Bulletin</span>
+      </div>
+      <div class="ablock">
+        <div class="q">Which funds moved?</div>
+        <div class="mover"><span>School Tuition Assistance</span><span class="delta-up">▲ +$2,340</span></div>
+        <div class="mover"><span>Fr. Breen Scholarship</span><span class="delta-up">▲ +$1,150</span></div>
+        <div class="mover"><span>Haiti Donations</span><span class="delta-down">▼ -$310</span></div>
+        <div class="ctx" style="margin-top:8px">vs last FY, through Jul</div>
+      </div>
+    </div>
+
+    <div class="weekly-card">
+      <div class="weekly-head">
+        <span class="t">Recent Weeks &middot; Offertory</span>
+        <span class="small muted">change fund ▾</span>
+        <span style="margin-left:auto" class="small muted">weekly detail available from 2025</span>
+      </div>
+      <div class="counting-banner">
+        Yesterday's collection is still being counted. The week ending Aug 9 shows online gifts only
+        so far; plate and checks usually post by Tuesday.
+      </div>
+      <div class="bars">
+        <div class="avg-line" style="bottom:69%"></div>
+        <div class="bar-col"><span class="bar-label">$21.5k</span><div class="bar" style="height:68%"></div><span class="bar-x">Jun 21</span></div>
+        <div class="bar-col"><span class="bar-label">$19.9k</span><div class="bar" style="height:63%"></div><span class="bar-x">Jun 28</span></div>
+        <div class="bar-col"><span class="bar-label">$27.1k</span><div class="bar" style="height:86%"></div><span class="bar-x">Jul 5</span></div>
+        <div class="bar-col"><span class="bar-label">$20.3k</span><div class="bar" style="height:64%"></div><span class="bar-x">Jul 12</span></div>
+        <div class="bar-col"><span class="bar-label">$22.7k</span><div class="bar" style="height:72%"></div><span class="bar-x">Jul 19</span></div>
+        <div class="bar-col"><span class="bar-label">$21.1k</span><div class="bar" style="height:67%"></div><span class="bar-x">Jul 26</span></div>
+        <div class="bar-col"><span class="bar-label">$23.4k</span><div class="bar bar-hl" style="height:74%"></div><span class="bar-x"><b>Aug 2</b></span></div>
+        <div class="bar-col"><span class="bar-label" style="color:#b09310">$14.3k</span><div class="bar bar-prov" style="height:45%"></div><span class="bar-x">Aug 9<br><span class="pill pill-counting">counting</span></span></div>
+      </div>
+      <div class="bars-legend"><span class="key"></span>4-week average of complete weeks ($21.9k)</div>
+      <div class="pace">FY 2026&ndash;27 pace: <b>$121,340</b> to date, 6.2% ahead of last year through the same completed week.</div>
+    </div>
+
+  </div>
+  <p class="annot"><b>What the marks mean:</b> gold stripes always mean "in progress," never a value
+  judgment. The counting week gets no red arrow and no year-over-year percent, ever; a half-counted
+  week compared against a full week reads as a collapse. The dashed blue line is the 4-week average
+  of complete weeks, which is the honest weekly trendline (single weeks are noisy: five-Sunday
+  months, snow, travel). Prior-year week comparisons use the week exactly 364 days back so
+  day-of-week lines up; weeks containing Christmas or Easter show a "holy-day week" flag instead of
+  a misleading percent. The banner deletes itself every Wednesday.</p>
+  </div>
+
+  <h2><span class="no">4</span>Numbers that read themselves: Compare Years</h2>
+  <p>YoY Compare and FY Compare merge into one "Compare Years" view with a Fiscal/Calendar toggle.
+  The totals math is untouched; the change is that the subtraction finally happens on screen, and
+  the methodology sentence collapses into a scope pill with a tooltip.</p>
+
+  <div class="mock"><div class="mock-tag">Before / After</div>
+  <div class="mock-inner">
+  <div class="ba">
+    <div class="ba-col ba-before">
+      <div class="ba-tag">v1 today</div>
+      <div class="v1-caveat">Totals compare each fiscal year through Jul (completed months only), so
+      the current partial year is measured against the same window in prior years.</div>
+      <div class="v1-card"><div class="l">Offertory (FY24-25)</div><div class="v">$108,940.00</div></div>
+      <div class="v1-card"><div class="l">Offertory (FY25-26)</div><div class="v">$114,210.00</div></div>
+      <div class="v1-card"><div class="l">Offertory (FY26-27)</div><div class="v">$121,340.00</div></div>
+      <div class="small muted" style="margin-top:6px">…the reader does the subtraction.</div>
+    </div>
+    <div class="ba-col ba-after">
+      <div class="ba-tag">v2 proposed</div>
+      <div class="cmp-card">
+        <div class="cmp-title">Offertory <span class="pill pill-scope" style="margin-left:6px">through Jul</span> <span class="info-i">i</span></div>
+        <div class="cmp-row"><span class="yr">FY 2024&ndash;25</span><span class="amt-sm">$108,940</span></div>
+        <div class="cmp-row"><span class="yr">FY 2025&ndash;26</span><span class="amt-sm">$114,210</span></div>
+        <div class="cmp-row"><span class="yr"><b>FY 2026&ndash;27</b></span><span class="amt-lg">$121,340</span></div>
+        <div class="verdict"><span class="delta-up">▲ +$7,130 (+6.2%)</span> <span class="muted">vs FY 2025&ndash;26</span></div>
+      </div>
+      <div class="small muted" style="margin-top:6px">One card per fund. The ⓘ tooltip holds the
+      methodology sentence. "New this FY" renders as a neutral gold badge; a fund silent in both
+      periods says so in gray instead of vanishing.</div>
+    </div>
+  </div>
+  </div>
+  </div>
+
+  <p>The same delta grammar repeats everywhere a number appears (briefing tile, compare card, fund
+  ledger row): arrow, percent, dollars, and the explicit window, in that order. Merging the two
+  views also kills the hardcoded 2025/2026 in the YoY code, one of the two deferred bugs on the
+  books; the merged view computes its years.</p>
+
+  <h2><span class="no">5</span>The fund ledger: All Funds without the wall</h2>
+  <p>The chip grid and the Fund Totals table become one ranked, searchable list, collapsed behind a
+  header that is itself information. Ranked totals with share bars do the "which funds matter"
+  job that 42 equal-weight chips cannot.</p>
+
+  <div class="mock"><div class="mock-tag">Mockup &middot; collapsed, then expanded</div>
+  <div class="mock-inner">
+    <div class="ledger-head">Funds &middot; 2 charted &middot; 38 with activity &middot;
+      <span class="money">$1,443,600</span>&nbsp;last 12 months
+      <span style="margin-left:auto; font-weight:400" class="muted">▸ expand</span></div>
+    <div style="height:10px"></div>
+    <div class="ledger-head" style="border-radius:8px 8px 0 0">Funds
+      <input style="margin-left:14px; flex:1; max-width:240px; border:1px solid var(--hairline); border-radius:6px; padding:4px 10px; font-size:13px" placeholder="Search funds…" disabled>
+      <span style="margin-left:auto; font-weight:400" class="small muted">All &middot; None</span></div>
+    <div class="ledger">
+      <div class="lrow lrow-all"><span class="cb cb-on" style="background:var(--blue);border-color:var(--blue)"></span><span>All Funds (Total)</span><span class="share"><i style="width:100%;background:var(--blue)"></i></span><span class="amt">$1,443,600</span></div>
+      <div class="lrow"><span class="cb cb-on"></span><span>Offertory <span class="delta-up small">▲</span></span><span class="share"><i style="width:78%"></i></span><span class="amt">$1,118,400</span></div>
+      <div class="lrow"><span class="cb"></span><span>School: Home &amp; School <span class="delta-up small">▲</span></span><span class="share"><i style="width:7%"></i></span><span class="amt">$102,300</span></div>
+      <div class="lrow"><span class="cb"></span><span>Annual Fund: School <span class="delta-up small">▲</span></span><span class="share"><i style="width:6%"></i></span><span class="amt">$86,900</span></div>
+      <div class="lrow"><span class="cb"></span><span>Christmas</span><span class="share"><i style="width:1%"></i></span><span class="amt">$12,900</span></div>
+      <div class="lrow"><span class="cb"></span><span>Fr. Breen Scholarship <span class="delta-up small">▲</span></span><span class="share"><i style="width:1%"></i></span><span class="amt">$9,800</span></div>
+      <div class="lrow"><span class="cb"></span><span>Holy Day Donations</span><span class="share"><i style="width:1%"></i></span><span class="amt">$9,100</span></div>
+      <div class="lrow"><span class="cb"></span><span>Vigil Lights <span class="delta-down small">▼</span></span><span class="share"><i style="width:1%"></i></span><span class="amt">$8,900</span></div>
+      <div class="lrow"><span class="cb"></span><span>Haiti Donations <span class="delta-down small">▼</span></span><span class="share"><i style="width:1%"></i></span><span class="amt">$7,400</span></div>
+    </div>
+  </div>
+  <p class="annot"><b>All Funds fixed at the source:</b> when the All Funds report loads, the chart
+  defaults to the All Funds (Total) line with Offertory overlaid, and a permanent scope line under
+  the chart title says exactly that ("Showing: All Funds total + Offertory &middot; 2 of 42 funds").
+  The parish-wide picture is the landing state instead of an unlabeled chip. Checking ledger rows
+  overlays more funds; past 5 the summary tiles collapse to top-5 plus "N more," past 8 the legend
+  hides and the chart grows tall, exactly as v1 already behaves.</p>
+  </div>
+
+  <h2><span class="no">6</span>One visual language</h2>
+  <p>v1 uses color and type by accident: four caption grays, cents everywhere, fund colors and
+  red/green verdicts six pixels apart, serif and sans traded at random. v2 gives every channel one
+  job and never reuses it.</p>
+
+  <div class="card">
+  <table class="lang">
+    <tr><th>Channel</th><th>Its one meaning</th></tr>
+    <tr><td><span class="sw" style="background:var(--gold)"></span>Gold</td>
+        <td>"In progress, be careful": hatched bars, counting badges, scope pills, the Monday
+        freshness dot. Never a fund color, never a verdict.</td></tr>
+    <tr><td><span class="sw" style="background:var(--green)"></span>Green / <span class="sw" style="background:var(--red)"></span>red</td>
+        <td>Direction of a delta, nothing else. "New this FY" is gold (nothing rose), and a fund with
+        no giving either period says so in gray instead of rendering nothing.</td></tr>
+    <tr><td><span class="sw" style="background:var(--blue)"></span>St. Edward blue</td>
+        <td>The All Funds (Total) identity, everywhere it appears: pinned ledger row, total line,
+        4-week average overlay.</td></tr>
+    <tr><td><span class="sw" style="background:var(--green)"></span><span class="sw" style="background:var(--chart-blue)"></span><span class="sw" style="background:var(--chart-gold)"></span><span class="sw" style="background:var(--red)"></span>Series colors</td>
+        <td>Fund identity on chart marks only, from a four-step palette derived from the brand and
+        validated for colorblind separation and contrast (green #00843D, blue #2A6FB0, gold #B8860B,
+        red #B23A2F). Beyond four charted funds the fifth-plus render gray with direct labels,
+        replacing today's 25-color cycle. Text never wears a series color.</td></tr>
+    <tr><td style="font-family:var(--serif)">Type &amp; dollars</td>
+        <td>Georgia for headline money and section titles; Trebuchet for everything else. One scale:
+        11px captions, 13px labels, 15px body, 24/34px money. Whole dollars on tiles, lists, and
+        chart labels; cents only in tables, tooltips, and the bulletin payload. Two grays, not four.</td></tr>
+    <tr><td>Caveats</td>
+        <td>Marks, not paragraphs: scope pills on the numbers they scope, hollow dot + dashed final
+        segment + "Aug*" tick for the month in progress on <i>every</i> view (today only YoY gets
+        this), "* month in progress" written in the chart legend where the asterisk lives, and ⓘ
+        tooltips holding the methodology sentences.</td></tr>
+  </table>
+  </div>
+
+  <h2><span class="no">7</span>Everything that stays</h2>
+  <p>The brief was keep all the logic and math, and the design does. Verified against the code:</p>
+  <div class="card"><div class="kv">
+    <div>Monthly bucketing and local-time date parsing</div>
+    <div>Regression trendline, dashed, stops at last complete month</div>
+    <div>Per-fund prior-period trend math (now shown with dollars)</div>
+    <div>Completed-month clipping in all year comparisons</div>
+    <div>Historical backfill rules (live data always wins)</div>
+    <div>Fund ranking and grand total (feeds the new ledger)</div>
+    <div>Collision-aware chart labels, negative formatting</div>
+    <div>Log scale with $0 gaps (moves into chart options)</div>
+    <div>Months-by-years pivot table, FY and CY</div>
+    <div>Financial Snapshot math + Copy for Bulletin, byte-for-byte</div>
+    <div>Fund search, 6-fund and 8-fund crowding behaviors</div>
+    <div>Entra sign-in, 5-minute server cache, brand palette</div>
+  </div></div>
+
+  <h2><span class="no">8</span>Build order</h2>
+  <p>Five steps, each independently shippable on the existing single-file app. No big-bang
+  restructure; components get extracted only as each section is touched.</p>
+
+  <div class="card">
+    <div class="buildstep gate"><div class="n">1</div><div class="b">
+      <div class="t">Launch gate: fix the API date filter</div>
+      The server's recent-gifts top-up filters by gift <i>update</i> date instead of gift
+      <i>received</i> date (the known deferred bug). For monthly buckets that error is rounding
+      noise; on a weekly axis it is a whole bar, on exactly the morning the meeting looks at it.
+      Switch to the received-date filter and verify against the live LGL key first. Also confirm
+      both LGL scheduled reports export at least 53 weeks of rows so "vs same week last year" can
+      populate.</div></div>
+    <div class="buildstep"><div class="n">2</div><div class="b">
+      <div class="t">Visual language pass + Compare Years cards</div>
+      Pure restyling of already-computed values: the delta grammar, scope pills, one type scale,
+      merged compare view (which also removes the hardcoded 2025/2026).</div></div>
+    <div class="buildstep"><div class="n">3</div><div class="b">
+      <div class="t">Answer band + masthead auto-load</div>
+      Kill the entry screen; load All Funds on arrival with the Offertory hybrid fetched in
+      parallel and a plain fallback banner if the big report fails. Financial Snapshot content
+      absorbs into the briefing.</div></div>
+    <div class="buildstep"><div class="n">4</div><div class="b">
+      <div class="t">Recent Weeks panel</div>
+      Client-side weekly bucketing from data already in memory (needs step 1). Week logic gets the
+      same adversarial verification the monthly math got in the June audit: week boundaries, FY
+      rollover, the 4-week average, the 364-day lookback.</div></div>
+    <div class="buildstep"><div class="n">5</div><div class="b">
+      <div class="t">Fund ledger merge + control cleanup</div>
+      Chips + totals table become the ranked ledger; controls become two labeled groups (Period /
+      View) defaulting to This FY; Line/Bar/Log move to a corner cluster; dead "Last 24 Mo" code
+      path gets a button or gets deleted.</div></div>
+  </div>
+
+  <h3>Three calls to make (recommendations included)</h3>
+  <ul>
+    <li><b>Weekly panel scope:</b> one fund at a time, defaulting to Offertory, with a dropdown for
+    any fund or the parish total. Weekly resolution across 42 funds would rebuild the wall this
+    redesign removes. <span class="muted">(Recommended: yes.)</span></li>
+    <li><b>Auto-load All Funds as the only entry:</b> slightly slower first paint, and the big zip
+    export has broken once before; the fallback banner covers it. The alternative keeps the
+    two-button screen. <span class="muted">(Recommended: auto-load with fallback.)</span></li>
+    <li><b>Fund category groupings (Parish / School / Diocesan):</b> skip at launch. The groups do
+    not exist in LGL data, so they would be a hand-kept list that goes stale every time a fund is
+    added. The ranked totals already communicate importance. <span class="muted">(Recommended: skip.)</span></li>
+  </ul>
+
+  <p class="small muted" style="margin-top:36px; border-top:1px solid var(--hairline); padding-top:12px">
+    Sources: heuristic review of src/Dashboard.jsx and server.js; three independently developed
+    design concepts ("The Monday Brief," "Four Desks," "The Monday Page") scored on clarity, Monday
+    fit, All Funds fix, and feasibility; winning hybrid synthesized from the top scorer plus the
+    best elements of the other two. Sample figures in mockups are illustrative, drawn to match
+    historical magnitudes.
+  </p>
+
+</div>
+</body>
+</html>
