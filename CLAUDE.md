@@ -20,7 +20,11 @@ Push to main branch. Render auto-deploys from GitHub.
 - Render type: Web Service (not Static Site)
 
 ## Architecture
-- React 18 frontend built with Vite 6, all UI in src/Dashboard.jsx
+- React 18 frontend built with Vite 6
+  - v1 (default, at /): all UI in src/Dashboard.jsx — frozen, do not modify while v2 is staging
+  - v2 (staging, at /v2): src/v2/* — DashboardV2.jsx orchestrator; lib.js holds
+    math copied VERBATIM from v1 plus the new weekly engine; historical.js is a
+    verbatim copy of HISTORICAL_MONTHLY. src/App.jsx routes on pathname.
 - Node.js + Express backend in server.js
   - Proxies LGL permanent links (CORS)
   - Hybrid endpoint: parses Offertory XLSX server-side, merges LGL API gifts
@@ -90,15 +94,36 @@ Push to main branch. Render auto-deploys from GitHub.
   in-progress month is excluded from comparison totals (marked * on the YoY chart)
 - Single left Y-axis (the earlier right axis was removed)
 
-## Deferred / Known Issues (flagged 2026-06-21, intentionally not fixed)
+## v2 (staging) — added 2026-08-10
+Live at /v2 behind the same SSO; v1 remains the default. Design doc:
+docs/v2-proposal.html. Answer-first single page: Monday briefing (three answer
+blocks + Copy for Bulletin, payload byte-identical to v1), Recent Weeks panel,
+evidence chart with Period/View segmented controls, merged Compare Years view
+(computed years, on-screen deltas), ranked fund ledger, pivot table.
+- Weekly rules: weeks run Mon-Sun labeled by ending Sunday; a week is complete
+  from the Wednesday after its Sunday; provisional weeks render striped gold,
+  get no comparisons, and are excluded from the 4-week average and FY pace;
+  prior-year partner week = 364 days back; holy-day weeks (Christmas, Easter,
+  Ash Wednesday) suppress percent comparisons; weekly floor is Jan 2025
+  (HISTORICAL_MONTHLY is monthly-only and never feeds weekly buckets).
+- v2 requests the API top-up with ?axis=union: server queries updated_from AND
+  gift_date_from and merges, with guards (received-date post-filter + count
+  heuristic) so an invalid gift_date_from key can never make results worse than
+  v1's updated_from baseline. CONFIRM ON LIVE: after a deploy, check that the
+  v2 masthead shows "+N recent" on a weekday — that proves the union top-up
+  works with the production LGL key.
+- Build/verification history: three-concept design fan-out + judged hybrid,
+  then a 22-agent adversarial verification pass (weekly math executed under
+  node, v1-fidelity diff, UI + server review); 11 confirmed findings fixed
+  pre-ship.
+
+## Deferred / Known Issues (flagged 2026-06-21)
 A 2026-06-21 multi-agent audit found 17 confirmed correctness bugs. All but the
-two below were fixed in commit 2f0a3e8. The trend-metric and date/timezone fixes
-changed some reported numbers, so screenshots taken before that date may differ.
-- server.js recent-gifts query filters by gift UPDATE date (q[] updated_from) but
-  the dashboard buckets by gift RECEIVED date. Correct axis is gift_date_from;
-  left unverified to avoid silently disabling the live top-up without a live-key
-  test. See the NOTE comment in fetchLGLApiGifts.
-- YoY view hardcodes calendar years 2025/2026 (will mislabel after July 2026).
+two below were fixed in commit 2f0a3e8. Status after the 2026-08-10 v2 work:
+- v1 recent-gifts query still filters by gift UPDATE date (q[] updated_from);
+  v1 behavior is intentionally unchanged. v2 uses the guarded union axis above.
+- v1 YoY view still hardcodes calendar years 2025/2026 (mislabels after July
+  2026). v2's Compare Years computes its years. Fix v1 only if it stays around.
 
 ## User
 Eric is not a developer. Explain before running destructive commands.

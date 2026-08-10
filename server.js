@@ -316,8 +316,9 @@ function detectColumnsServer(headers) {
   return { dateCol: findCol(datePatterns), amountCol: findCol(amountPatterns), fundCol: findCol(fundPatterns) };
 }
 
-// Fetch gifts from LGL API since a given date, optionally filtered by fund
-async function fetchLGLApiGifts(sinceDate, fundFilter) {
+// Fetch gifts from LGL API since a given date, optionally filtered by fund.
+// queryTerm is the LGL search term for one axis, e.g. "updated_from=2026-08-01".
+async function fetchLGLApiGiftsAxis(queryTerm) {
   const gifts = [];
   let offset = 0;
   const limit = 100;
@@ -325,18 +326,7 @@ async function fetchLGLApiGifts(sinceDate, fundFilter) {
 
   for (let page = 0; page < maxPages; page++) {
     const params = new URLSearchParams();
-    // NOTE (axis mismatch — see audit finding #11): this selects gifts by their
-    // UPDATED-at date, but every downstream consumer buckets gifts by RECEIVED
-    // date (received_date / gift_date). A gift received after `sinceDate` whose
-    // record was last touched before it (e.g. an advance-entered or back-dated
-    // gift) can be skipped by this window, then appear later once the daily
-    // export catches it. The correct axis is the gift date, e.g.
-    //   params.append("q[]", `gift_date_from=${sinceDate}`);
-    // Left on `updated_from` for now because it is the proven-working filter and
-    // swapping the param has not been validated against the live LGL API; doing
-    // so blind risks silently disabling the recent-gifts top-up. Verify the
-    // `gift_date_from` key and the result sort order against a live key first.
-    params.append("q[]", `updated_from=${sinceDate}`);
+    params.append("q[]", queryTerm);
     params.append("limit", String(limit));
     params.append("offset", String(offset));
 
@@ -355,6 +345,49 @@ async function fetchLGLApiGifts(sinceDate, fundFilter) {
     if (offset + items.length >= (data.total_items || 0)) break;
     offset += limit;
   }
+  return gifts;
+}
+
+// NOTE (axis mismatch — audit finding #11): `updated_from` selects gifts by
+// UPDATED-at date, but downstream consumers bucket by RECEIVED date. That
+// misses advance-entered gifts (received after sinceDate, record untouched
+// since before it). `gift_date_from` alone would instead miss back-dated
+// gifts entered after the report (a Sunday plate batch typed in on Monday is
+// caught by updated_from because entry touches the record, and its gift date
+// still buckets to Sunday). v1 behavior (axis omitted / "updated") is
+// unchanged. axis="union" — used by the v2 dashboard — queries BOTH axes and
+// merges, so each axis covers the other's blind spot. The gift_date_from key
+// could not be re-verified against LGL docs offline, so the union guards
+// against both of its possible failure modes: a 400 (unknown key rejected) is
+// swallowed, and an ignored-key full dump (huge result set) is discarded by
+// the size sanity check. Either way the top-up can never end up worse than
+// v1's updated_from baseline.
+async function fetchLGLApiGifts(sinceDate, fundFilter, axis) {
+  let gifts = await fetchLGLApiGiftsAxis(`updated_from=${sinceDate}`);
+
+  if (axis === "union") {
+    try {
+      // Post-filter by received date: a working gift_date_from returns only
+      // gifts on/after sinceDate, so this is a no-op in the healthy case; if
+      // LGL ever ignores the key and dumps everything, the dump is stripped to
+      // genuinely-recent gifts here (the count heuristic below is a backstop).
+      const byGiftDate = (await fetchLGLApiGiftsAxis(`gift_date_from=${sinceDate}`))
+        .filter(g => (g.received_date || "") >= sinceDate);
+      const suspicious = byGiftDate.length > 500 && byGiftDate.length > 3 * Math.max(gifts.length, 25);
+      if (suspicious) {
+        console.warn(`[lgl-api] gift_date_from returned ${byGiftDate.length} items vs ${gifts.length} from updated_from — treating as ignored-key dump, discarding`);
+      } else {
+        const seen = new Set(gifts.map(g => `${g.id ?? `${g.received_date}|${g.received_amount}|${g.fund_name}`}`));
+        for (const g of byGiftDate) {
+          const key = `${g.id ?? `${g.received_date}|${g.received_amount}|${g.fund_name}`}`;
+          if (!seen.has(key)) { gifts.push(g); seen.add(key); }
+        }
+      }
+    } catch (err) {
+      console.warn(`[lgl-api] gift_date_from axis failed (${err.message}) — continuing with updated_from only`);
+    }
+  }
+
   // Filter by fund client-side since LGL API doesn't support fund_name as a query param
   if (fundFilter) {
     const filterLower = fundFilter.toLowerCase();
@@ -401,9 +434,9 @@ function deduplicateKey(row, dateCol, amountCol, fundCol) {
 const hybridCache = {};
 const CACHE_TTL = 5 * 60 * 1000;
 
-async function hybridFetch(permanentLinkUrl, fundFilter, res) {
-  // Check cache
-  const cacheKey = fundFilter || "__all__";
+async function hybridFetch(permanentLinkUrl, fundFilter, res, axis) {
+  // Check cache (axis-qualified so v1 and v2 responses never cross-serve)
+  const cacheKey = `${fundFilter || "__all__"}|${axis || "updated"}`;
   const cached = hybridCache[cacheKey];
   if (cached && Date.now() - cached.time < CACHE_TTL) {
     console.log(`[hybrid] Serving cached response for ${cacheKey}`);
@@ -436,7 +469,7 @@ async function hybridFetch(permanentLinkUrl, fundFilter, res) {
   // 5. If we have the API key, fetch recent gifts to top up the permanent link data
   if (LGL_API_KEY && dateCol && amountCol && fundCol) {
     try {
-      const apiGifts = await fetchLGLApiGifts(reportDate, fundFilter);
+      const apiGifts = await fetchLGLApiGifts(reportDate, fundFilter, axis);
       console.log(`[hybrid] API returned ${apiGifts.length} gifts since ${reportDate}`);
 
       // Build dedup set from permanent link rows
@@ -478,7 +511,8 @@ async function hybridFetch(permanentLinkUrl, fundFilter, res) {
 
 // Hybrid endpoints
 app.get("/api/lgl-data-hybrid", requireAuth, async (req, res) => {
-  try { await hybridFetch(LGL_OFFERTORY_URL, "Offertory", res); }
+  const axis = req.query.axis === "union" ? "union" : undefined; // v1 sends nothing
+  try { await hybridFetch(LGL_OFFERTORY_URL, "Offertory", res, axis); }
   catch (err) { console.error("Hybrid fetch error:", err); res.status(502).json({ error: err.message }); }
 });
 
@@ -493,8 +527,10 @@ app.get("/api/lgl-recent-gifts", requireAuth, async (req, res) => {
     return res.json({ gifts: [], message: "No LGL_API_KEY configured" });
   }
 
+  const axis = req.query.axis === "union" ? "union" : undefined; // v1 sends nothing
+
   // Check cache
-  const cacheKey = `recent_${sinceDate}`;
+  const cacheKey = `recent_${sinceDate}|${axis || "updated"}`;
   const cached = hybridCache[cacheKey];
   if (cached && Date.now() - cached.time < CACHE_TTL) {
     console.log(`[recent] Serving cached response`);
@@ -502,7 +538,7 @@ app.get("/api/lgl-recent-gifts", requireAuth, async (req, res) => {
   }
 
   try {
-    const apiGifts = await fetchLGLApiGifts(sinceDate);
+    const apiGifts = await fetchLGLApiGifts(sinceDate, undefined, axis);
     console.log(`[recent] API returned ${apiGifts.length} gifts since ${sinceDate}`);
     // Return minimal row data the frontend can merge
     const gifts = apiGifts.map(g => ({
