@@ -21,7 +21,9 @@ Push to main branch. Render auto-deploys from GitHub.
 
 ## Architecture
 - React 18 frontend built with Vite 6
-  - v1 (default, at /): all UI in src/Dashboard.jsx — frozen, do not modify while v2 is staging
+  - v1 (default, at /): all UI in src/Dashboard.jsx — frozen, do not modify while
+    v2 is staging (sole exception so far: the "Try the New View (v2)" button on
+    the landing screen, added at Eric's ask 2026-08-11)
   - v2 (staging, at /v2): src/v2/* — DashboardV2.jsx orchestrator; lib.js holds
     math copied VERBATIM from v1 plus the new weekly engine; historical.js is a
     verbatim copy of HISTORICAL_MONTHLY. src/App.jsx routes on pathname.

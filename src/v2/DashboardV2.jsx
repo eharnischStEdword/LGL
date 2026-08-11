@@ -409,9 +409,11 @@ export default function DashboardV2() {
 }
 
 function Shell({ children }) {
+  // zoom scales every px size in the page uniformly (Eric 2026-08-11: v2 type
+  // too small). Old Firefox ignores zoom and falls back to normal size.
   return (
     <div style={{ minHeight: "100vh", background: T.page, fontFamily: T.sans, color: T.ink, padding: "18px 22px" }}>
-      <div style={{ maxWidth: 1240, margin: "0 auto" }}>{children}</div>
+      <div style={{ maxWidth: 1240, margin: "0 auto", zoom: 1.15 }}>{children}</div>
     </div>
   );
 }

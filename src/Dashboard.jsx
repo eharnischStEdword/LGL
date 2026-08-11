@@ -1066,6 +1066,23 @@ export default function Dashboard() {
             Pulls all fund data from LGL (Offertory, Capital Campaign, etc.)
           </p>
 
+          {/* v2 entry point */}
+          <a
+            href="/v2"
+            style={{
+              display: "block", width: "100%", padding: "14px 24px",
+              background: "#003764", color: "#fff", border: "none", borderRadius: 10,
+              fontSize: 18, fontWeight: 700, cursor: "pointer",
+              fontFamily: serif, marginBottom: 10, textDecoration: "none",
+              boxSizing: "border-box", boxShadow: "0 2px 8px rgba(0,55,100,0.25)"
+            }}
+          >
+            Try the New View (v2)
+          </a>
+          <p style={{ fontSize: 16, color: "#999", marginTop: 0, marginBottom: 20 }}>
+            Answers first: this week, fiscal year pace, and which funds moved. Loads its data automatically.
+          </p>
+
           {/* Error display */}
           {error && (
             <div style={{

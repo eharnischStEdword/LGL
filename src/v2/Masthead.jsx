@@ -86,6 +86,10 @@ export default function Masthead({ authUser, fileName, giftCount, fundCount, dat
         {authUser && (
           <span>{authUser.name} &middot; <a href="/auth/logout" style={{ color: T.green, fontWeight: 600, textDecoration: "none" }}>Sign out</a></span>
         )}
+        <a href="/docs" style={{
+          padding: "6px 13px", background: T.card, border: `1px solid ${T.hairline}`,
+          borderRadius: 6, color: T.blue, fontWeight: 600, textDecoration: "none",
+        }}>Staff guide</a>
         <a href="/" style={{
           padding: "6px 13px", background: T.card, border: `1px solid ${T.hairline}`,
           borderRadius: 6, color: T.greenDark, fontWeight: 600, textDecoration: "none",
