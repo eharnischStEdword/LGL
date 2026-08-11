@@ -1,5 +1,5 @@
 import { T, Card, ScopePill, StatusPill, Delta } from "./theme.jsx";
-import { MONTHS, addDays, fmtWhole, fmtCents, fmtWeekLabel, fmtWeekLong, getFYLabel, FY_MONTH_LABELS } from "./lib.js";
+import { MONTHS, addDays, startOfDay, fmtWhole, fmtCents, fmtWeekLabel, fmtWeekLong, getFYLabel, FY_MONTH_LABELS } from "./lib.js";
 
 // The three questions staff walk in with, answered in plain English and big
 // numbers. Block B absorbs the v1 Financial Snapshot: same math, same
@@ -28,7 +28,7 @@ function BigMoney({ children, color = T.greenDark }) {
    half-counted number (Eric, 2026-08-11). The last complete week and its
    comparisons move below the divider. Thu-Sat there is no counting week and
    the complete week leads as before (Sunday itself counts as pending). */
-function WeekBlock({ weeklyModel, fundLabel }) {
+function WeekBlock({ weeklyModel, fundLabel, now }) {
   const lc = weeklyModel?.lastComplete;
   const pending = weeklyModel?.counting?.length
     ? weeklyModel.counting[weeklyModel.counting.length - 1]
@@ -69,7 +69,9 @@ function WeekBlock({ weeklyModel, fundLabel }) {
           <StatusPill complete={false} />
         </div>
         <div style={{ fontSize: 12.5, color: T.ink3 }}>
-          Waiting on the money counters &middot; cash &amp; checks land by Thursday, {fmtWeekLabel(addDays(pending.endSunday, 4))}.
+          {now && startOfDay(now).getTime() > addDays(pending.endSunday, 4).getTime()
+            ? <>Waiting on the money counters &middot; the count has not been entered yet.</>
+            : <>Waiting on the money counters &middot; cash &amp; checks usually land by Thursday, {fmtWeekLabel(addDays(pending.endSunday, 4))}.</>}
         </div>
         <div style={{ borderTop: `1px solid ${T.hairline}`, marginTop: 10, paddingTop: 8 }}>
           {lc ? (
@@ -263,7 +265,7 @@ export default function AnswerBand({ weeklyModel, weeklyFundLabel, fyTrend, move
       display: "grid", gap: 12, marginBottom: 14,
       gridTemplateColumns: "repeat(auto-fit, minmax(270px, 1fr))",
     }}>
-      <WeekBlock weeklyModel={weeklyModel} fundLabel={weeklyFundLabel} />
+      <WeekBlock weeklyModel={weeklyModel} fundLabel={weeklyFundLabel} now={now} />
       {offertoryFund
         ? <FyBlock fyTrend={fyTrend} rawGifts={rawGifts} offertoryFund={offertoryFund} now={now} />
         : (

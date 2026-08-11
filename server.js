@@ -555,6 +555,72 @@ app.get("/api/lgl-recent-gifts", requireAuth, async (req, res) => {
   }
 });
 
+// ─── Plate-status detector (v2 evidence-based completeness) ───
+// Eric's export-imports are PLANNED for Mon/Thu but are manual and can slip,
+// so the client must not trust the calendar alone. This asks LGL whether any
+// gift in the newest ended Mon-Sun week carries a plate-money payment type
+// (check/cash). plateLanded: true = the count is in; false = no plate gifts
+// for that week yet; null = cannot tell (no key, API error, LGL returned no
+// payment-type fields, or a suspected ignored-key dump) — on null the client
+// falls back to the calendar rule, so this can never make things worse.
+app.get("/api/lgl-plate-status", requireAuth, async (req, res) => {
+  const fmtDay = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  // The client names the week it cares about (its newest ended Sunday) so a
+  // server-timezone day shift can never make the two disagree; fall back to
+  // computing it here if the param is absent.
+  let endSunday;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(req.query.week || "")) {
+    const [wy, wm, wd] = req.query.week.split("-").map(Number);
+    endSunday = new Date(wy, wm - 1, wd);
+  } else {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dow = today.getDay(); // 0 Sun
+    const upcoming = dow === 0 ? today
+      : new Date(today.getFullYear(), today.getMonth(), today.getDate() + (7 - dow));
+    endSunday = upcoming.getTime() <= today.getTime() ? upcoming
+      : new Date(upcoming.getFullYear(), upcoming.getMonth(), upcoming.getDate() - 7);
+  }
+  const weekStart = new Date(endSunday.getFullYear(), endSunday.getMonth(), endSunday.getDate() - 6);
+  const weekKey = fmtDay(endSunday);
+
+  if (!LGL_API_KEY) {
+    return res.json({ week: weekKey, plateLanded: null, message: "No LGL_API_KEY configured" });
+  }
+  const cacheKey = `plate_${weekKey}`;
+  const cached = hybridCache[cacheKey];
+  if (cached && Date.now() - cached.time < CACHE_TTL) {
+    return res.json(cached.data);
+  }
+
+  try {
+    const raw = await fetchLGLApiGiftsAxis(`gift_date_from=${fmtDay(weekStart)}`);
+    // If LGL ignored the key and dumped everything, the page cap may have
+    // truncated the dump before this week's gifts — evidence unreliable.
+    const capped = raw.length >= 4900;
+    const items = raw.filter(g => {
+      const d = g.received_date || "";
+      return d >= fmtDay(weekStart) && d <= weekKey;
+    });
+    const typeOf = (g) => g.payment_type_name || (g.payment_type && g.payment_type.name) || null;
+    const types = [...new Set(items.map(typeOf).filter(Boolean))];
+    const typed = items.filter(g => typeOf(g));
+    // Word-boundary match so eCheck / E-Check (ACH) / Cash App — online types
+    // that would land by Monday — cannot fake the plate count arriving.
+    const isPlateType = (t) => /\b(cash|check)\b/i.test(t) && !/e-?check/i.test(t) && !/cash app/i.test(t);
+    const plateLanded = capped || typed.length === 0
+      ? null
+      : typed.some(g => isPlateType(typeOf(g)));
+    console.log(`[plate] week ${weekKey}: ${items.length} gifts in week, types=[${types.join(", ")}], capped=${capped}, plateLanded=${plateLanded}`);
+    const result = { week: weekKey, plateLanded, giftCount: items.length, types, refreshedAt: new Date().toISOString() };
+    hybridCache[cacheKey] = { time: Date.now(), data: result };
+    res.json(result);
+  } catch (err) {
+    console.warn(`[plate] detector failed (${err.message}) — client falls back to calendar rule`);
+    res.json({ week: weekKey, plateLanded: null, error: err.message });
+  }
+});
+
 // ─── Auth gate: redirect unauthenticated users to login ───
 if (AUTH_ENABLED) {
   app.use((req, res, next) => {

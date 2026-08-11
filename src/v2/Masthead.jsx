@@ -1,25 +1,40 @@
 import { T } from "./theme.jsx";
 
 // Two separate freshness signals: the fetch timestamp (always true) and a
-// completeness dot (amber Sun-Wed: online gifts arrive live, but Sunday's
-// cash and checks are counted Wednesday and entered by Thursday, so the
-// newest week — including the week ending today on a Sunday — is still
-// growing; green Thu onward, matching lib.js isWeekComplete which flips
-// weeks complete at Thursday 00:00). On Monday the timestamp is true and
-// the data still is not — hence two signals.
-function completenessState(now) {
+// completeness dot. Evidence (plateStatus from /api/lgl-plate-status) beats
+// the calendar: the Mon/Thu import schedule is a plan, not a guarantee.
+// plateLanded true → green from Wednesday (the count day); false → amber no
+// matter the weekday ("still waiting on the count" once Thursday passes);
+// null/absent → calendar fallback: amber Sun-Wed, green Thu-Sat, matching
+// lib.js isWeekComplete. On Monday the timestamp is true and the data still
+// is not — hence two signals.
+function completenessState(now, plateStatus) {
   const day = now.getDay(); // 0 Sun .. 6 Sat
-  const amber = day <= 3;
-  return {
-    color: amber ? T.gold : T.green,
-    label: amber
-      ? "Online gifts arrive live; Sunday's cash and checks are counted Wednesday and entered by Thursday."
-      : "All counts should be in: cash, checks, and online gifts through last Sunday.",
+  const landed = plateStatus && typeof plateStatus.plateLanded === "boolean" ? plateStatus.plateLanded : null;
+  if (landed === true && day >= 3) {
+    return {
+      color: T.green, short: "count is in",
+      label: "This week's cash and check count has been entered; online gifts arrive live.",
+    };
+  }
+  if (landed === false && day >= 4) {
+    return {
+      color: T.gold, short: "still waiting on the count",
+      label: "The newest week's cash and check count has not been entered in LGL yet; totals update once it is.",
+    };
+  }
+  const amber = landed === null ? day <= 3 : true;
+  return amber ? {
+    color: T.gold, short: "cash & checks usually land by Thursday",
+    label: "Online gifts arrive live; Sunday's cash and checks are counted Wednesday and usually entered by Thursday.",
+  } : {
+    color: T.green, short: "counts in through last Sunday",
+    label: "All counts should be in: cash, checks, and online gifts through last Sunday.",
   };
 }
 
-export default function Masthead({ authUser, fileName, giftCount, fundCount, dataLoadedAt, dataTimeKnown, importDate, now }) {
-  const comp = completenessState(now);
+export default function Masthead({ authUser, fileName, giftCount, fundCount, dataLoadedAt, dataTimeKnown, importDate, plateStatus, now }) {
+  const comp = completenessState(now, plateStatus);
   const timeStr = dataLoadedAt && dataTimeKnown
     ? `, ${dataLoadedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
     : "";
@@ -56,7 +71,7 @@ export default function Masthead({ authUser, fileName, giftCount, fundCount, dat
               width: 9, height: 9, borderRadius: "50%", background: comp.color,
               boxShadow: `0 0 0 3px ${comp.color}22`, display: "inline-block",
             }} />
-            <span>{comp.color === T.gold ? "cash & checks land by Thursday" : "counts in through last Sunday"}</span>
+            <span>{comp.short}</span>
           </span>
           {importDate && (
             <span title="The date of the bulk LGL report file this dashboard loaded; gifts newer than it come from the live LGL top-up.">

@@ -1,5 +1,5 @@
 import { T, Card, StatusPill } from "./theme.jsx";
-import { addDays, fmtLabel, fmtWhole, fmtWeekLabel, getFYLabel } from "./lib.js";
+import { fmtLabel, fmtWhole, fmtWeekLabel, getFYLabel } from "./lib.js";
 
 // The Recent Weeks panel: 8 Mon-Sun bars labeled by ending Sunday. Provisional
 // ("counting") weeks — online gifts arrive live, cash/checks are counted
@@ -73,7 +73,7 @@ function WeeklyBody({ weeklyModel, fyPace, now }) {
           const isLastComplete = lastComplete && w.key === lastComplete.key;
           return (
             <div key={w.key} style={{ flex: 1, minWidth: 52 }}
-              title={`${fmtWeekLabel(w.endSunday)}: ${fmtWhole(w.total)}${w.complete ? "" : ` (still counting · complete Thu ${fmtWeekLabel(addDays(w.endSunday, 4))})`}${w.holyDay ? " · holy-day week" : ""}`}>
+              title={`${fmtWeekLabel(w.endSunday)}: ${fmtWhole(w.total)}${w.complete ? "" : " (still counting)"}${w.holyDay ? " · holy-day week" : ""}`}>
               <div style={{ height: H + 18, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end" }}>
                 <span style={{ fontSize: 11, color: w.complete ? T.ink2 : "#b09310", marginBottom: 4, fontVariantNumeric: "tabular-nums" }}>
                   {w.total > 0 ? fmtLabel(w.total) : "—"}
@@ -113,7 +113,7 @@ function WeeklyBody({ weeklyModel, fyPace, now }) {
       </div>
 
       <div style={{ marginTop: 6, fontSize: 11, color: T.ink3 }}>
-        How the numbers arrive: online (Pushpay) gifts arrive live &middot; cash &amp; checks are counted Wednesday and entered by Thursday &middot; a full data refresh runs Monday and Thursday
+        How the numbers arrive: online (Pushpay) gifts arrive live &middot; cash &amp; checks are counted Wednesday and usually entered by Thursday &middot; the newest week counts as complete once its money is actually in
       </div>
 
       {fyPace && fyPace.prior > 0 && (

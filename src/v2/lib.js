@@ -309,7 +309,12 @@ export function buildWeekTotals(rawGifts, fund) {
 
 // The full weekly model for the Recent Weeks panel + answer band.
 // Returns null when there is no live weekly data at all.
-export function buildWeeklyModel(rawGifts, fund, now, nWeeks = 8) {
+// plateStatus (optional, from /api/lgl-plate-status) is EVIDENCE that beats
+// the calendar for the one week it covers: the Mon/Thu import schedule is a
+// plan, not a guarantee (Eric, 2026-08-11). plateLanded true = complete from
+// Wednesday (the count day); false = not complete no matter the weekday;
+// null/absent = calendar rule.
+export function buildWeeklyModel(rawGifts, fund, now, nWeeks = 8, plateStatus = null) {
   const live = rawGifts.filter(g => g.date >= WEEKLY_FLOOR);
   if (live.length === 0) return null;
   const totals = buildWeekTotals(rawGifts, fund);
@@ -325,7 +330,12 @@ export function buildWeeklyModel(rawGifts, fund, now, nWeeks = 8) {
   for (let i = nWeeks - 1; i >= 0; i--) {
     const endSunday = addDays(lastEnded, -7 * i);
     if (addDays(endSunday, -6) < minLiveDate) continue; // partial data coverage — omit
-    const complete = isWeekComplete(endSunday, now);
+    let complete = isWeekComplete(endSunday, now);
+    if (plateStatus && plateStatus.week === weekKey(endSunday) && typeof plateStatus.plateLanded === "boolean") {
+      complete = plateStatus.plateLanded
+        ? startOfDay(now).getTime() >= addDays(endSunday, 3).getTime() // count entered; complete from Wed
+        : false; // count not entered yet — the calendar alone cannot complete it
+    }
     weeks.push({
       endSunday,
       key: weekKey(endSunday),

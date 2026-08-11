@@ -65,11 +65,21 @@ Push to main branch. Render auto-deploys from GitHub.
 - Counting rhythm (drives v2 week completeness, confirmed by Eric 2026-08-11):
   Pushpay credit-card gifts flow into LGL live; money counters count plate
   cash/checks on WEDNESDAY, make the deposit, then Barb enters them, so plate
-  money is in LGL by THURSDAY; Eric's manual export-imports run MONDAY and
-  THURSDAY. Neither data path exposes payment type to the client (stripped at
-  server.js recent-gifts/hybrid mappers and DashboardV2 processRows), so v2
-  models this rhythm by TIMING (Thursday completeness + copy), not by
-  splitting gifts into online vs cash/check.
+  money is USUALLY in LGL by Thursday; Eric's manual export-imports are
+  PLANNED for Monday and Thursday but are manual and can slip — never
+  hard-code that schedule (Eric, 2026-08-11: "you're being too rigid").
+- Evidence-based completeness (v1.3.0): /api/lgl-plate-status asks the LGL
+  API whether any gift in the newest ended week carries a check/cash
+  payment_type_name. true → week completes from WEDNESDAY (count day);
+  false → stays "counting" past Thursday until the count actually lands;
+  null (no key, API error, no payment-type fields, suspected ignored-key
+  dump) → calendar fallback: complete from THURSDAY after the ending Sunday.
+  Older weeks are always calendar. UNVERIFIED ON LIVE: the payment_type_name
+  values St. Edward actually uses — the endpoint returns a `types` array and
+  logs `[plate]` lines on Render; check once after deploy that plate weeks
+  show types matching /check|cash/i, and update the regex if the parish uses
+  different names. (The gift report/CSV paths still expose no payment type;
+  only this server-side API check sees it.)
 - 5-minute server-side cache on hybrid/recent endpoints
 
 ## Historical Data
@@ -109,8 +119,8 @@ blocks + Copy for Bulletin, payload byte-identical to v1), Recent Weeks panel,
 evidence chart with Period/View segmented controls, merged Compare Years view
 (computed years, on-screen deltas), ranked fund ledger, pivot table.
 - Weekly rules: weeks run Mon-Sun labeled by ending Sunday; a week is complete
-  from the THURSDAY after its Sunday (changed from Wednesday 2026-08-11 to
-  match the counting rhythm in Key Facts); provisional weeks render striped gold,
+  from the THURSDAY after its Sunday (calendar fallback; the newest week
+  prefers plate-status EVIDENCE — see Key Facts); provisional weeks render striped gold,
   get no comparisons, and are excluded from the 4-week average and FY pace;
   prior-year partner week = 364 days back; holy-day weeks (Christmas, Easter,
   Ash Wednesday) suppress percent comparisons; weekly floor is Jan 2025

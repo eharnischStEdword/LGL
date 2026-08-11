@@ -4,6 +4,7 @@ import {
   parseSpreadsheet, parseDateFlexible, parseAmount, detectColumns,
   DATA_FLOOR, buildGiftIndex, computeFundTrends, buildWeeklyModel,
   fyPaceThroughWeek, getFYLabel, fmtCents, FY_MONTH_LABELS,
+  startOfDay, addDays, weekEndingSunday, weekKey,
 } from "./lib.js";
 import Masthead from "./Masthead.jsx";
 import AnswerBand from "./AnswerBand.jsx";
@@ -63,6 +64,7 @@ export default function DashboardV2() {
   const [dataLoadedAt, setDataLoadedAt] = useState(null);
   const [dataTimeKnown, setDataTimeKnown] = useState(false);
   const [importDate, setImportDate] = useState(null); // date of the bulk LGL report file
+  const [plateStatus, setPlateStatus] = useState(null); // evidence: has the week's count been entered?
   const [authUser, setAuthUser] = useState(null);
 
   const [selectedFunds, setSelectedFunds] = useState(new Set());
@@ -209,6 +211,18 @@ export default function DashboardV2() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Evidence check: has the newest ended week's cash/check count actually been
+  // entered in LGL? The Mon/Thu import schedule is a plan, not a guarantee, so
+  // the weekly model prefers this over the calendar when it can tell.
+  useEffect(() => {
+    const upcoming = weekEndingSunday(now);
+    const lastEnded = upcoming.getTime() <= startOfDay(now).getTime() ? upcoming : addDays(upcoming, -7);
+    fetch(`/api/lgl-plate-status?week=${weekKey(lastEnded)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j) setPlateStatus(j); })
+      .catch(() => {}); // no evidence — the calendar rule stands
+  }, [now]);
+
   const toggleFund = useCallback((fund) => {
     setSelectedFunds(prev => {
       const next = new Set(prev);
@@ -227,8 +241,8 @@ export default function DashboardV2() {
   );
 
   const weeklyModel = useMemo(
-    () => (loaded ? buildWeeklyModel(rawGifts, weeklyFund === WEEKLY_ALL ? null : weeklyFund, now) : null),
-    [rawGifts, weeklyFund, now, loaded]
+    () => (loaded ? buildWeeklyModel(rawGifts, weeklyFund === WEEKLY_ALL ? null : weeklyFund, now, 8, plateStatus) : null),
+    [rawGifts, weeklyFund, now, loaded, plateStatus]
   );
 
   const fyPace = useMemo(
@@ -322,7 +336,7 @@ export default function DashboardV2() {
       <Masthead
         authUser={authUser} fileName={fileName}
         giftCount={rawGifts.length} fundCount={funds.length}
-        dataLoadedAt={dataLoadedAt} dataTimeKnown={dataTimeKnown} importDate={importDate} now={now}
+        dataLoadedAt={dataLoadedAt} dataTimeKnown={dataTimeKnown} importDate={importDate} plateStatus={plateStatus} now={now}
       />
 
       {banner && (
