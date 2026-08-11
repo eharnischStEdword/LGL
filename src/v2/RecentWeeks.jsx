@@ -1,12 +1,13 @@
 import { T, Card, StatusPill } from "./theme.jsx";
-import { fmtLabel, fmtWhole, fmtWeekLabel, getFYLabel } from "./lib.js";
+import { addDays, fmtLabel, fmtWhole, fmtWeekLabel, getFYLabel } from "./lib.js";
 
 // The Recent Weeks panel: 8 Mon-Sun bars labeled by ending Sunday. Provisional
-// ("counting") weeks render striped gold with gray labels and are excluded
-// from the 4-week average and every comparison. Gold stripes mean "still in
-// progress", never a value judgment — no red arrow can appear on a counting
-// week. One fund at a time (Offertory default): weekly resolution across 42
-// funds is exactly the wall of info v2 removes.
+// ("counting") weeks — online gifts arrive live, cash/checks are counted
+// Wednesday and entered by Thursday — render striped gold with gray labels
+// and are excluded from the 4-week average and every comparison. Gold stripes
+// mean "still in progress", never a value judgment — no red arrow can appear
+// on a counting week. One fund at a time (Offertory default): weekly
+// resolution across 42 funds is exactly the wall of info v2 removes.
 
 export const WEEKLY_ALL = "__ALL__";
 const ALL = WEEKLY_ALL;
@@ -59,8 +60,8 @@ function WeeklyBody({ weeklyModel, fyPace, now }) {
           fontSize: 12.5, color: "#6d5a0a", padding: "7px 12px", margin: "8px 0 6px",
         }}>
           {counting.length === 1 && lastComplete
-            ? <>Sunday's collection is still being counted. The week ending {fmtWeekLabel(counting[0].endSunday)} shows gifts posted so far; plate and checks usually post by Tuesday.</>
-            : <>The newest {counting.length === 1 ? "week is" : "weeks are"} still being counted; plate and checks usually post by Tuesday.</>}
+            ? <>Sunday's cash and checks are counted Wednesday and entered by Thursday. The week ending {fmtWeekLabel(counting[0].endSunday)} shows gifts posted so far; the full total should be in by Thursday, {fmtWeekLabel(addDays(counting[0].endSunday, 4))}.</>
+            : <>The newest {counting.length === 1 ? "week is" : "weeks are"} still being counted: online gifts appear live, and cash and checks land the Thursday after each Sunday.</>}
         </div>
       )}
 
@@ -83,7 +84,7 @@ function WeeklyBody({ weeklyModel, fyPace, now }) {
           const isLastComplete = lastComplete && w.key === lastComplete.key;
           return (
             <div key={w.key} style={{ flex: 1, minWidth: 52 }}
-              title={`${fmtWeekLabel(w.endSunday)}: ${fmtWhole(w.total)}${w.complete ? "" : " (still counting)"}${w.holyDay ? " · holy-day week" : ""}`}>
+              title={`${fmtWeekLabel(w.endSunday)}: ${fmtWhole(w.total)}${w.complete ? "" : ` (still counting · complete Thu ${fmtWeekLabel(addDays(w.endSunday, 4))})`}${w.holyDay ? " · holy-day week" : ""}`}>
               <div style={{ height: H + 18, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end" }}>
                 <span style={{ fontSize: 11, color: w.complete ? T.ink2 : "#b09310", marginBottom: 4, fontVariantNumeric: "tabular-nums" }}>
                   {w.total > 0 ? fmtLabel(w.total) : "—"}
@@ -118,8 +119,12 @@ function WeeklyBody({ weeklyModel, fyPace, now }) {
           </span>
         )}
         {thisWeekSoFar != null && thisWeekSoFar > 0 && (
-          <span style={{ color: T.ink3 }}>This week so far: {fmtWhole(thisWeekSoFar)} (online gifts land daily)</span>
+          <span style={{ color: T.ink3 }}>This week so far: {fmtWhole(thisWeekSoFar)} (online gifts arrive live)</span>
         )}
+      </div>
+
+      <div style={{ marginTop: 6, fontSize: 11, color: T.ink3 }}>
+        How the numbers arrive: online (Pushpay) gifts arrive live &middot; cash &amp; checks are counted Wednesday and entered by Thursday &middot; a full data refresh runs Monday and Thursday
       </div>
 
       {fyPace && fyPace.prior > 0 && (

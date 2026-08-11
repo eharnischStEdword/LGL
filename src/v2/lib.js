@@ -225,10 +225,13 @@ export function computeFundTrends(giftIndex, funds, timeRange, now) {
 /* ── NEW: weekly engine (v2 only) ──
    A collection week runs Monday through Sunday and is labeled by its ending
    Sunday ("Week ending Sun, Aug 2"). A week is PROVISIONAL until the
-   Wednesday after its ending Sunday (plate cash/checks are counted and posted
-   Mon-Tue); provisional weeks are excluded from the 4-week average, FY pace,
-   and every year-over-year comparison. Prior-year partner = the week ending
-   exactly 364 days earlier (preserves day-of-week). Weeks containing
+   Thursday after its ending Sunday, matching the parish counting rhythm:
+   online (Pushpay credit-card) gifts flow into LGL live, but the money
+   counters count plate cash/checks on Wednesday and Barb enters them, so
+   plate money is in LGL by Thursday; the bulk export-imports also run Monday
+   and Thursday. Provisional weeks are excluded from the 4-week average, FY
+   pace, and every year-over-year comparison. Prior-year partner = the week
+   ending exactly 364 days earlier (preserves day-of-week). Weeks containing
    Christmas, Easter, or Ash Wednesday are flagged instead of compared. */
 
 export function addDays(date, n) {
@@ -258,10 +261,11 @@ export function fmtWeekLong(sunday) {
   return `Week ending Sun, ${MONTHS[sunday.getMonth()]} ${sunday.getDate()}`;
 }
 
-// Complete on the Wednesday after the ending Sunday (a date rule, not a guess
-// about batch posting): endSunday +1 = Mon, +2 = Tue, +3 = Wed 00:00.
+// Complete on the Thursday after the ending Sunday: cash/checks are counted
+// Wednesday and entered by Thursday, and the Thursday bulk import lands the
+// same day. endSunday +1 = Mon, +2 = Tue, +3 = Wed, +4 = Thu 00:00.
 export function isWeekComplete(endSunday, now) {
-  return startOfDay(now).getTime() >= addDays(endSunday, 3).getTime();
+  return startOfDay(now).getTime() >= addDays(endSunday, 4).getTime();
 }
 
 // Anonymous Gregorian algorithm (Computus) — Easter Sunday for a given year.

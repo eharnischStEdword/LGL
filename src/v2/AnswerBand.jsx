@@ -57,6 +57,11 @@ function WeekBlock({ weeklyModel, fundLabel }) {
           <Delta value={lc.total - avg} pct={((lc.total - avg) / avg) * 100} window="vs 4-week average" />
         )}
       </div>
+      {weeklyModel.counting && weeklyModel.counting.length > 0 && (
+        <div style={{ fontSize: 12, color: T.ink3, marginTop: 8 }}>
+          {fmtWeekLong(weeklyModel.counting[weeklyModel.counting.length - 1].endSunday)} is still counting &middot; cash &amp; checks land by Thursday.
+        </div>
+      )}
     </Card>
   );
 }

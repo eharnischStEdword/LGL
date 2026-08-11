@@ -62,6 +62,14 @@ Push to main branch. Render auto-deploys from GitHub.
 - When a new fund is added in LGL, manually add it to the FULL GIVING REPORT's fund selection
 - LGL API key: Settings > Integration Settings > LGL API
 - Data flow: permanent link (bulk daily) + API top-up (real-time recent gifts)
+- Counting rhythm (drives v2 week completeness, confirmed by Eric 2026-08-11):
+  Pushpay credit-card gifts flow into LGL live; money counters count plate
+  cash/checks on WEDNESDAY, make the deposit, then Barb enters them, so plate
+  money is in LGL by THURSDAY; Eric's manual export-imports run MONDAY and
+  THURSDAY. Neither data path exposes payment type to the client (stripped at
+  server.js recent-gifts/hybrid mappers and DashboardV2 processRows), so v2
+  models this rhythm by TIMING (Thursday completeness + copy), not by
+  splitting gifts into online vs cash/check.
 - 5-minute server-side cache on hybrid/recent endpoints
 
 ## Historical Data
@@ -101,7 +109,8 @@ blocks + Copy for Bulletin, payload byte-identical to v1), Recent Weeks panel,
 evidence chart with Period/View segmented controls, merged Compare Years view
 (computed years, on-screen deltas), ranked fund ledger, pivot table.
 - Weekly rules: weeks run Mon-Sun labeled by ending Sunday; a week is complete
-  from the Wednesday after its Sunday; provisional weeks render striped gold,
+  from the THURSDAY after its Sunday (changed from Wednesday 2026-08-11 to
+  match the counting rhythm in Key Facts); provisional weeks render striped gold,
   get no comparisons, and are excluded from the 4-week average and FY pace;
   prior-year partner week = 364 days back; holy-day weeks (Christmas, Easter,
   Ash Wednesday) suppress percent comparisons; weekly floor is Jan 2025

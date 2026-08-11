@@ -1,18 +1,20 @@
 import { T } from "./theme.jsx";
 
 // Two separate freshness signals: the fetch timestamp (always true) and a
-// completeness dot (amber Mon-Tue: Sunday collections usually post Mon-Tue,
-// so the newest week may still grow; green Wed onward, matching lib.js
-// isWeekComplete which flips weeks complete at Wednesday 00:00). On Monday
-// the timestamp is true and the data still is not — hence two signals.
+// completeness dot (amber Sun-Wed: online gifts arrive live, but Sunday's
+// cash and checks are counted Wednesday and entered by Thursday, so the
+// newest week — including the week ending today on a Sunday — is still
+// growing; green Thu onward, matching lib.js isWeekComplete which flips
+// weeks complete at Thursday 00:00). On Monday the timestamp is true and
+// the data still is not — hence two signals.
 function completenessState(now) {
   const day = now.getDay(); // 0 Sun .. 6 Sat
-  const amber = day >= 1 && day <= 2;
+  const amber = day <= 3;
   return {
     color: amber ? T.gold : T.green,
     label: amber
-      ? "Sunday collections usually post Mon-Tue; the newest week may still grow."
-      : "All recent weeks should be fully posted.",
+      ? "Online gifts arrive live; Sunday's cash and checks are counted Wednesday and entered by Thursday."
+      : "All counts should be in: cash, checks, and online gifts through last Sunday.",
   };
 }
 
@@ -54,7 +56,7 @@ export default function Masthead({ authUser, fileName, giftCount, fundCount, dat
               width: 9, height: 9, borderRadius: "50%", background: comp.color,
               boxShadow: `0 0 0 3px ${comp.color}22`, display: "inline-block",
             }} />
-            <span>{comp.color === T.gold ? "newest week still posting" : "weeks fully posted"}</span>
+            <span>{comp.color === T.gold ? "cash & checks land by Thursday" : "counts in through last Sunday"}</span>
           </span>
           {fileName && <span>&middot; {fileName}</span>}
           {giftCount > 0 && <span>&middot; {giftCount.toLocaleString()} gifts &middot; {fundCount} funds</span>}
