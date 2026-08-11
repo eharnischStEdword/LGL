@@ -48,23 +48,12 @@ export default function RecentWeeks({ weeklyModel, weeklyFund, funds, onFundChan
 }
 
 function WeeklyBody({ weeklyModel, fyPace, now }) {
-  const { weeks, counting, fourWeekAvg, thisWeekSoFar, lastComplete } = weeklyModel;
+  const { weeks, fourWeekAvg, thisWeekSoFar, lastComplete } = weeklyModel;
   const max = Math.max(...weeks.map(w => w.total), fourWeekAvg || 0, 1);
   const H = 180; // bar area height in px
 
   return (
     <>
-      {counting.length > 0 && (
-        <div style={{
-          background: "#fbf6e2", border: `1px solid ${T.goldLight}`, borderRadius: 6,
-          fontSize: 12.5, color: "#6d5a0a", padding: "7px 12px", margin: "8px 0 6px",
-        }}>
-          {counting.length === 1 && lastComplete
-            ? <>Sunday's cash and checks are counted Wednesday and entered by Thursday. The week ending {fmtWeekLabel(counting[0].endSunday)} shows gifts posted so far; the full total should be in by Thursday, {fmtWeekLabel(addDays(counting[0].endSunday, 4))}.</>
-            : <>The newest {counting.length === 1 ? "week is" : "weeks are"} still being counted: online gifts appear live, and cash and checks land the Thursday after each Sunday.</>}
-        </div>
-      )}
-
       {/* Fixed geometry so every bar shares one baseline: label row (18px) +
           bar area (H px) + footer (40px + 6px gap = bars bottom out 46px up).
           The dashed 4-week-average line is positioned from those constants,

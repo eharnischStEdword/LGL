@@ -62,6 +62,7 @@ export default function DashboardV2() {
   const [offertoryOnly, setOffertoryOnly] = useState(false);
   const [dataLoadedAt, setDataLoadedAt] = useState(null);
   const [dataTimeKnown, setDataTimeKnown] = useState(false);
+  const [importDate, setImportDate] = useState(null); // date of the bulk LGL report file
   const [authUser, setAuthUser] = useState(null);
 
   const [selectedFunds, setSelectedFunds] = useState(new Set());
@@ -135,6 +136,10 @@ export default function DashboardV2() {
       if (!resp.ok) throw new Error(`All Funds report: HTTP ${resp.status}`);
       const ct = resp.headers.get("content-type") || "";
       const reportDate = resp.headers.get("x-report-date");
+      if (reportDate) {
+        const [ry, rm, rd] = reportDate.split("-").map(Number);
+        setImportDate(new Date(ry, rm - 1, rd));
+      }
       const buf = await resp.arrayBuffer();
       const rows = parseSpreadsheet(buf, ct);
       let added = 0;
@@ -189,6 +194,10 @@ export default function DashboardV2() {
         if (resp.status === 401) { setLoadError("SESSION_EXPIRED"); return; }
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const json = await resp.json();
+        if (json.reportDate) {
+          const [ry, rm, rd] = json.reportDate.split("-").map(Number);
+          setImportDate(new Date(ry, rm - 1, rd));
+        }
         if (json.refreshedAt) { setDataLoadedAt(new Date(json.refreshedAt)); setDataTimeKnown(true); }
         processRows(json.rows, `Offertory only${json.apiGiftsAdded ? ` +${json.apiGiftsAdded} recent` : ""}`, true);
         setBanner(`The All Funds report failed to load (${primaryErr.message}), so this is Offertory only. Fund-level views are limited until it recovers.`);
@@ -313,7 +322,7 @@ export default function DashboardV2() {
       <Masthead
         authUser={authUser} fileName={fileName}
         giftCount={rawGifts.length} fundCount={funds.length}
-        dataLoadedAt={dataLoadedAt} dataTimeKnown={dataTimeKnown} now={now}
+        dataLoadedAt={dataLoadedAt} dataTimeKnown={dataTimeKnown} importDate={importDate} now={now}
       />
 
       {banner && (

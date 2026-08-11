@@ -18,7 +18,7 @@ function completenessState(now) {
   };
 }
 
-export default function Masthead({ authUser, fileName, giftCount, fundCount, dataLoadedAt, dataTimeKnown, now }) {
+export default function Masthead({ authUser, fileName, giftCount, fundCount, dataLoadedAt, dataTimeKnown, importDate, now }) {
   const comp = completenessState(now);
   const timeStr = dataLoadedAt && dataTimeKnown
     ? `, ${dataLoadedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
@@ -58,6 +58,11 @@ export default function Masthead({ authUser, fileName, giftCount, fundCount, dat
             }} />
             <span>{comp.color === T.gold ? "cash & checks land by Thursday" : "counts in through last Sunday"}</span>
           </span>
+          {importDate && (
+            <span title="The date of the bulk LGL report file this dashboard loaded; gifts newer than it come from the live LGL top-up.">
+              &middot; most recent import {importDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            </span>
+          )}
           {fileName && <span>&middot; {fileName}</span>}
           {giftCount > 0 && <span>&middot; {giftCount.toLocaleString()} gifts &middot; {fundCount} funds</span>}
         </div>
