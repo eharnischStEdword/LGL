@@ -118,9 +118,12 @@ evidence chart with Period/View segmented controls, merged Compare Years view
 - v2 requests the API top-up with ?axis=union: server queries updated_from AND
   gift_date_from and merges, with guards (received-date post-filter + count
   heuristic) so an invalid gift_date_from key can never make results worse than
-  v1's updated_from baseline. CONFIRM ON LIVE: after a deploy, check that the
-  v2 masthead shows "+N recent" on a weekday — that proves the union top-up
-  works with the production LGL key.
+  v1's updated_from baseline. VERIFIED ON LIVE 2026-08-11: masthead showed
+  "Updated Aug 11, 10:04 AM" (a timestamp renders only when the top-up call
+  succeeds and returns refreshedAt), so the union top-up works with the
+  production key. "+N recent" was absent only because the report file was
+  from the same day; a "+N" sighting on a stale-file day is a bonus check,
+  not required.
 - Build/verification history: three-concept design fan-out + judged hybrid,
   then a 22-agent adversarial verification pass (weekly math executed under
   node, v1-fidelity diff, UI + server review); 11 confirmed findings fixed
