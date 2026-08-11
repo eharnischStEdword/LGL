@@ -632,6 +632,12 @@ if (AUTH_ENABLED) {
   });
 }
 
+// ─── Staff guide: the internal doc as a live page, behind the same SSO ───
+// (the auth gate above covers /docs; only /auth, /api, and asset extensions bypass it)
+app.get("/docs", (req, res) => {
+  res.sendFile(join(__dirname, "staff-guide.html"));
+});
+
 // ─── Static files & SPA ───
 app.use(express.static(join(__dirname, "dist")));
 app.get("/{*splat}", (req, res) => {

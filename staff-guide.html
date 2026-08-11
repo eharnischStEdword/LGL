@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Fund Giving Dashboard, Staff Guide - St. Edward</title>
+<style>
+  :root {
+    --green: #00843D; --green-dark: #005921; --gold: #DAAA00;
+    --blue: #003764; --paper: #EEF4F1; --ink: #1c2b24; --ink2: #4a5a52;
+    --card: #ffffff; --hairline: #d7e2dc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "Trebuchet MS", "Segoe UI", sans-serif; font-size: 15px; line-height: 1.55;
+  }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 28px 20px 60px; }
+  header { border-bottom: 3px solid var(--green); padding-bottom: 14px; margin-bottom: 22px; }
+  h1 { font-family: Georgia, serif; color: var(--green-dark); font-size: 30px; margin: 0 0 4px; }
+  .sub { color: var(--ink2); font-size: 14px; }
+  h2 { font-family: Georgia, serif; color: var(--green-dark); font-size: 21px; margin: 30px 0 8px; }
+  h3 { font-size: 15px; color: var(--blue); margin: 18px 0 6px; }
+  a { color: var(--blue); }
+  .card { background: var(--card); border: 1px solid var(--hairline); border-radius: 8px; padding: 14px 18px; margin: 10px 0; }
+  table.facts { width: 100%; border-collapse: collapse; }
+  table.facts td { padding: 7px 10px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+  table.facts td:first-child { font-weight: 700; color: var(--green-dark); white-space: nowrap; width: 110px; }
+  ul { margin: 6px 0; padding-left: 22px; }
+  li { margin: 5px 0; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 1px 9px; background: #e3f2e9; color: var(--green-dark); }
+  .pill.gold { background: #faf3d8; color: #8a7407; border: 1px dashed var(--gold); }
+  .note { background: #fbf6e2; border: 1px solid #e7d9a2; border-radius: 6px; padding: 9px 13px; font-size: 13.5px; color: #6d5a0a; }
+  footer { margin-top: 40px; font-size: 12.5px; color: var(--ink2); border-top: 1px solid var(--hairline); padding-top: 10px; }
+  @media print {
+    body { background: #fff; font-size: 12px; }
+    .wrap { max-width: none; padding: 0; }
+    .card { border: 1px solid #bbb; break-inside: avoid; }
+    a { color: #000; text-decoration: none; }
+    a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 10px; color: #555; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Fund Giving Dashboard</h1>
+  <div class="sub">St. Edward Church and School &middot; Staff guide &middot; Updated August 11, 2026 &middot; Owner: Eric Harnisch, <a href="mailto:eharnisch@stedward.org">eharnisch@stedward.org</a></div>
+</header>
+
+<div class="card">
+  <table class="facts">
+    <tr><td>Live link</td><td><a href="https://lgl.onrender.com">lgl.onrender.com</a> (Classic view) &middot; <a href="https://lgl.onrender.com/v2">lgl.onrender.com/v2</a> (new view, in preview)</td></tr>
+    <tr><td>Sign-in</td><td>Your @stedward.org Microsoft account, plus an email allow-list. Being staff is not enough; your address must be on the list.</td></tr>
+    <tr><td>Hosting</td><td>Render web service st-edward-fund-dashboard (Node 20)</td></tr>
+    <tr><td>Data</td><td>Nothing stored. Two scheduled LGL report exports, plus the LGL API for gifts newer than the last export. Sessions and cache live in memory only.</td></tr>
+    <tr><td>Code</td><td><a href="https://github.com/eharnischStEdword/LGL">github.com/eharnischStEdword/LGL</a> (public repository)</td></tr>
+  </table>
+</div>
+
+<h2>What it is</h2>
+<p>A read-only window into giving data that lives in Little Green Light (LGL). Fund-by-fund totals, time-range comparisons, year-over-year views, weekly collection tracking, and a copy-to-clipboard monthly Offertory snapshot for the bulletin. The dashboard never writes anything back to LGL.</p>
+
+<h2>The two views</h2>
+<div class="card">
+  <h3 style="margin-top:0">New view (lgl.onrender.com/v2)</h3>
+  <p>Answers first. The top row answers three questions: How was giving this week? Are we ahead of last year? Which funds moved? Below that: Recent Weeks (eight weekly bars), a chart with period and view controls, a computed Compare Years view, a ranked fund ledger, and a pivot table. The Copy for Bulletin button produces the same snapshot the Classic view does. This view will become the default once it has settled.</p>
+  <h3>Classic view (lgl.onrender.com)</h3>
+  <p>The original dashboard. Load Offertory Data (Offertory only) or Load All Funds Report (every fund), pick a time range (Fiscal Year, Year to Date, Last 12 or 24 Months, All, Year-over-Year, or a multi-year comparison), use the fund search and Fund Totals table to toggle funds on the chart, and use the Financial Snapshot copy button for the bulletin figure.</p>
+</div>
+
+<h2>How the numbers arrive</h2>
+<div class="card">
+  <ul>
+    <li><b>Online gifts (Pushpay credit card)</b> flow into LGL live and show up the same day.</li>
+    <li><b>Cash and checks</b> are counted by the money counters on Wednesday, then entered, so they are usually in LGL by Thursday. That schedule is a plan, and it can slip.</li>
+    <li><b>Bulk imports</b> are run by hand, normally Monday and Thursday. The top bar shows the date of the most recent import, and a "+N recent" note when live gifts arrived after it.</li>
+  </ul>
+  <p class="note">Because of this rhythm, the newest week shows as <span class="pill gold">Counting</span> (striped gold) until its cash and check count has actually been entered in LGL. The dashboard checks for the count itself; if the count runs late, the week simply stays in Counting. A Counting week is left out of averages and comparisons on purpose, so a half-counted Sunday never reads as a bad week.</p>
+</div>
+
+<h2>Troubleshooting</h2>
+<div class="card">
+  <ul>
+    <li><b>Signed in but told you are not authorized:</b> your email must be added to the allow-list; ask Eric to add you (ALLOWED_DASHBOARD_USERS in Render).</li>
+    <li><b>A new fund is missing:</b> create it in LGL, then add it to the FULL GIVING REPORT scheduled export inside LGL, or it will never appear on the dashboard.</li>
+    <li><b>Numbers look a touch behind:</b> data is a scheduled export plus a live top-up; a back-dated gift can lag until the next export. Known and accepted.</li>
+    <li><b>The newest week looks low:</b> check its label first. If it says Counting, the cash and check count has not been entered yet; the number is online gifts so far.</li>
+    <li><b>Everyone got signed out:</b> normal after a deploy or restart; sessions are in memory. Sign back in.</li>
+    <li><b>Year-over-Year labels look wrong in the Classic view:</b> known deferred bug (it hardcodes 2025 and 2026, so labels drift after July 2026). The new view's Compare Years computes its years correctly.</li>
+    <li><b>All Funds view stops loading:</b> LGL zips its export; the unzipper in server.js is the usual break point if LGL changes formats again.</li>
+  </ul>
+</div>
+
+<h2>If Eric is unavailable</h2>
+<div class="card">
+  <ul>
+    <li>Pushing to the main branch on GitHub auto-deploys. No database, no disk; worst case, redeploy and sign back in.</li>
+    <li>Secrets live in Render: the Microsoft client secret (CLIENT_SECRET; if it is removed, sign-in turns off entirely and the dashboard is open to anyone with the link) and the LGL API key (LGL_API_KEY, regenerated in LGL under Settings, then Integration Settings, then LGL API).</li>
+    <li>The export cadence lives in LGL itself: two scheduled report exports (Offertory, and FULL GIVING REPORT) configured under Gift/Pledge Reports, then Scheduled reports.</li>
+    <li>For anything involving Microsoft 365, Entra sign-in consent, or the parish tenant, the parish IT vendor is Elemental Technology Solutions; they administer the tenant.</li>
+    <li>Hosting (Render), the code (GitHub), and the Microsoft Entra app registrations are tied to Eric's accounts. The apps keep running without him, but deploys, secret rotations, and sign-in fixes need his access or a handoff of those accounts.</li>
+  </ul>
+</div>
+
+<h2>Going deeper</h2>
+<ul>
+  <li>Full technical documentation: <a href="https://github.com/eharnischStEdword/LGL">the GitHub repository</a> (README and CLAUDE.md are current; HANDOFF.md there is older and partly stale).</li>
+  <li>A detailed handoff file also exists: 02-Fund-Dashboard-LGL.html in the St. Edward Handoffs folder (Eric keeps this folder; ask him for a copy).</li>
+</ul>
+
+<footer>
+  This page is served by the dashboard itself at lgl.onrender.com/docs, behind the same sign-in, and is the current version of the internal Word document "Fund Giving Dashboard (LGL)".
+</footer>
+
+</div>
+</body>
+</html>
