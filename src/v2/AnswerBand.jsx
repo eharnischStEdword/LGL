@@ -1,5 +1,5 @@
 import { T, Card, ScopePill, StatusPill, Delta } from "./theme.jsx";
-import { MONTHS, fmtWhole, fmtCents, fmtWeekLong, getFYLabel, FY_MONTH_LABELS } from "./lib.js";
+import { MONTHS, addDays, fmtWhole, fmtCents, fmtWeekLabel, fmtWeekLong, getFYLabel, FY_MONTH_LABELS } from "./lib.js";
 
 // The three questions staff walk in with, answered in plain English and big
 // numbers. Block B absorbs the v1 Financial Snapshot: same math, same
@@ -14,27 +14,78 @@ function QuestionHead({ children }) {
   );
 }
 
-function BigMoney({ children }) {
+function BigMoney({ children, color = T.greenDark }) {
   return (
-    <div style={{ fontFamily: T.serif, fontSize: 33, color: T.greenDark, lineHeight: 1.05 }}>
+    <div style={{ fontFamily: T.serif, fontSize: 33, color, lineHeight: 1.05 }}>
       {children}
     </div>
   );
 }
 
-/* ── Block A: How was giving this week? ── */
+/* ── Block A: How was giving this week? ──
+   When a week is still counting (Sun-Wed), it IS "this week" to the reader,
+   so it leads the card as clearly pending — never a green Complete next to a
+   half-counted number (Eric, 2026-08-11). The last complete week and its
+   comparisons move below the divider. Thu-Sat there is no counting week and
+   the complete week leads as before (Sunday itself counts as pending). */
 function WeekBlock({ weeklyModel, fundLabel }) {
   const lc = weeklyModel?.lastComplete;
-  if (!lc) {
+  const pending = weeklyModel?.counting?.length
+    ? weeklyModel.counting[weeklyModel.counting.length - 1]
+    : null;
+  if (!lc && !pending) {
     return (
       <Card>
         <QuestionHead>How was giving this week?</QuestionHead>
-        <div style={{ color: T.ink3, fontSize: 14 }}>No complete week yet — weekly detail begins with live 2025 data.</div>
+        <div style={{ color: T.ink3, fontSize: 14 }}>No weekly data yet — weekly detail begins with live 2025 data.</div>
       </Card>
     );
   }
   const prior = weeklyModel.priorYearWeek;
   const avg = weeklyModel.fourWeekAvg;
+  const comparisons = lc && (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {prior && prior.holyDay ? (
+        <span><ScopePill title="This week or its partner week last year contains Christmas, Easter, or Ash Wednesday; a percent comparison would mislead.">holy-day week &middot; % not compared</ScopePill></span>
+      ) : prior && prior.total > 0 ? (
+        <Delta value={lc.total - prior.total} pct={((lc.total - prior.total) / prior.total) * 100} window="vs same week last year" />
+      ) : prior ? (
+        <span style={{ fontSize: 13, color: T.ink3 }}>no gifts in the same week last year</span>
+      ) : (
+        <span style={{ fontSize: 13, color: T.ink3 }}>same-week comparison n/a &mdash; weekly history starts Jan 2025</span>
+      )}
+      {avg != null && avg > 0 && (
+        <Delta value={lc.total - avg} pct={((lc.total - avg) / avg) * 100} window="vs 4-week average" />
+      )}
+    </div>
+  );
+  if (pending) {
+    return (
+      <Card>
+        <QuestionHead>How was giving this week?</QuestionHead>
+        <BigMoney color={T.goldInk}>{fmtWhole(pending.total)} <span style={{ fontSize: 15, color: T.ink3 }}>so far</span></BigMoney>
+        <div style={{ fontSize: 12.5, color: T.ink3, margin: "3px 0 6px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <span>{fmtWeekLong(pending.endSunday)} &middot; {fundLabel}</span>
+          <StatusPill complete={false} />
+        </div>
+        <div style={{ fontSize: 12.5, color: T.ink3 }}>
+          Waiting on the money counters &middot; cash &amp; checks land by Thursday, {fmtWeekLabel(addDays(pending.endSunday, 4))}.
+        </div>
+        <div style={{ borderTop: `1px solid ${T.hairline}`, marginTop: 10, paddingTop: 8 }}>
+          {lc ? (
+            <>
+              <div style={{ fontSize: 12.5, color: T.ink2, marginBottom: 5 }}>
+                Last complete week: <b style={{ color: T.ink }}>{fmtWhole(lc.total)}</b> &middot; {fmtWeekLong(lc.endSunday)} <StatusPill complete />
+              </div>
+              {comparisons}
+            </>
+          ) : (
+            <div style={{ fontSize: 12.5, color: T.ink3 }}>No complete week yet.</div>
+          )}
+        </div>
+      </Card>
+    );
+  }
   return (
     <Card>
       <QuestionHead>How was giving this week?</QuestionHead>
@@ -43,25 +94,7 @@ function WeekBlock({ weeklyModel, fundLabel }) {
         <span>{fmtWeekLong(lc.endSunday)} &middot; {fundLabel}</span>
         <StatusPill complete />
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {prior && prior.holyDay ? (
-          <span><ScopePill title="This week or its partner week last year contains Christmas, Easter, or Ash Wednesday; a percent comparison would mislead.">holy-day week &middot; % not compared</ScopePill></span>
-        ) : prior && prior.total > 0 ? (
-          <Delta value={lc.total - prior.total} pct={((lc.total - prior.total) / prior.total) * 100} window="vs same week last year" />
-        ) : prior ? (
-          <span style={{ fontSize: 13, color: T.ink3 }}>no gifts in the same week last year</span>
-        ) : (
-          <span style={{ fontSize: 13, color: T.ink3 }}>same-week comparison n/a &mdash; weekly history starts Jan 2025</span>
-        )}
-        {avg != null && avg > 0 && (
-          <Delta value={lc.total - avg} pct={((lc.total - avg) / avg) * 100} window="vs 4-week average" />
-        )}
-      </div>
-      {weeklyModel.counting && weeklyModel.counting.length > 0 && (
-        <div style={{ fontSize: 12, color: T.ink3, marginTop: 8 }}>
-          {fmtWeekLong(weeklyModel.counting[weeklyModel.counting.length - 1].endSunday)} is still counting &middot; cash &amp; checks land by Thursday.
-        </div>
-      )}
+      {comparisons}
     </Card>
   );
 }
