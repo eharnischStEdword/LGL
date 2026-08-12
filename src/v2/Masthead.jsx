@@ -87,10 +87,11 @@ export default function Masthead({ authUser, fileName, giftCount, fundCount, dat
           <span>{authUser.name} &middot; <a href="/auth/logout" style={{ color: T.green, fontWeight: 600, textDecoration: "none" }}>Sign out</a></span>
         )}
         {onStartTour && (
-          <button onClick={onStartTour} style={{
-            background: "none", border: "none", color: T.ink3, fontWeight: 600,
-            fontSize: 13, cursor: "pointer", fontFamily: T.sans, padding: 0,
-          }}>Show me around</button>
+          <button onClick={onStartTour} title="Replay the quick tour of this page" style={{
+            padding: "6px 13px", background: T.card, border: `1px solid ${T.goldLight}`,
+            borderRadius: 6, color: T.goldInk, fontWeight: 600, fontSize: 13,
+            cursor: "pointer", fontFamily: T.sans,
+          }}>✦ Walkthrough</button>
         )}
         <a href="/docs" style={{
           padding: "6px 13px", background: T.card, border: `1px solid ${T.hairline}`,
