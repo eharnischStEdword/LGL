@@ -120,6 +120,10 @@ docs/v2-proposal.html. Answer-first single page: Monday briefing (three answer
 blocks + Copy for Bulletin, payload byte-identical to v1), Recent Weeks panel,
 evidence chart with Period/View segmented controls, merged Compare Years view
 (computed years, on-screen deltas), ranked fund ledger, pivot table.
+- First-visit tour (2026-08-12): src/v2/Tour.jsx auto-runs once per browser
+  (sev2.tourSeen, stamped at start), six steps that scroll to and glow
+  [data-tour] targets (freshness dot, answer band, weeks, chart, Customize
+  layout); no library, no mask. Replay via "Show me around" in the masthead.
 - Saved layout (2026-08-12, from Robin's "too much up top"): the five content
   sections reorder by drag or arrows ("Customize layout" above the answer
   band) and persist per browser in localStorage key sev2.layoutOrder; unknown

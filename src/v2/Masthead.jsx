@@ -33,7 +33,7 @@ function completenessState(now, plateStatus) {
   };
 }
 
-export default function Masthead({ authUser, fileName, giftCount, fundCount, dataLoadedAt, dataTimeKnown, importDate, plateStatus, now }) {
+export default function Masthead({ authUser, fileName, giftCount, fundCount, dataLoadedAt, dataTimeKnown, importDate, plateStatus, now, onStartTour }) {
   const comp = completenessState(now, plateStatus);
   const timeStr = dataLoadedAt && dataTimeKnown
     ? `, ${dataLoadedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
@@ -66,7 +66,7 @@ export default function Masthead({ authUser, fileName, giftCount, fundCount, dat
           {dataLoadedAt && (
             <span><b style={{ color: T.ink }}>Updated {dateStr}{timeStr}</b></span>
           )}
-          <span title={comp.label} style={{ display: "inline-flex", alignItems: "center", gap: 5, cursor: "help" }}>
+          <span data-tour="freshness" title={comp.label} style={{ display: "inline-flex", alignItems: "center", gap: 5, cursor: "help" }}>
             <span style={{
               width: 9, height: 9, borderRadius: "50%", background: comp.color,
               boxShadow: `0 0 0 3px ${comp.color}22`, display: "inline-block",
@@ -85,6 +85,12 @@ export default function Masthead({ authUser, fileName, giftCount, fundCount, dat
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12, fontSize: 13, color: T.ink2 }}>
         {authUser && (
           <span>{authUser.name} &middot; <a href="/auth/logout" style={{ color: T.green, fontWeight: 600, textDecoration: "none" }}>Sign out</a></span>
+        )}
+        {onStartTour && (
+          <button onClick={onStartTour} style={{
+            background: "none", border: "none", color: T.ink3, fontWeight: 600,
+            fontSize: 13, cursor: "pointer", fontFamily: T.sans, padding: 0,
+          }}>Show me around</button>
         )}
         <a href="/docs" style={{
           padding: "6px 13px", background: T.card, border: `1px solid ${T.hairline}`,

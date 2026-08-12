@@ -11,6 +11,7 @@ import AnswerBand from "./AnswerBand.jsx";
 import RecentWeeks, { WEEKLY_ALL } from "./RecentWeeks.jsx";
 import EvidenceSection, { monthBucketsForPeriod } from "./EvidenceSection.jsx";
 import FundLedger from "./FundLedger.jsx";
+import Tour, { TOUR_SEEN_KEY } from "./Tour.jsx";
 
 // v2: one scrolling page in meeting order — answers, evidence, controls on
 // demand. Data auto-loads on arrival: the All Funds report plus the API
@@ -66,8 +67,10 @@ function loadSavedOrder() {
   }
 }
 
-function SectionShell({ label, index, count, arranging, onMove, onDragStart, onDragEnter, onDragEnd, children }) {
-  if (!arranging) return children;
+function SectionShell({ id, label, index, count, arranging, onMove, onDragStart, onDragEnter, onDragEnd, children }) {
+  // The data-tour wrapper is always present so the first-visit tour can find
+  // each section regardless of the user's saved order.
+  if (!arranging) return <div data-tour={id}>{children}</div>;
   const arrowBtn = {
     border: `1px solid ${T.hairline}`, background: T.card, borderRadius: 5,
     color: T.greenDark, fontSize: 13, fontWeight: 700, cursor: "pointer",
@@ -154,6 +157,7 @@ export default function DashboardV2() {
 
   const [sectionOrder, setSectionOrder] = useState(loadSavedOrder);
   const [arranging, setArranging] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
   const dragIdx = useRef(null);
   const moveSection = useCallback((index, dir) => {
     setSectionOrder(prev => {
@@ -295,6 +299,21 @@ export default function DashboardV2() {
 
   useEffect(() => { load(); }, [load]);
 
+  // First visit in this browser: start the walkthrough once the page has real
+  // content. Seen is stamped at start so a mid-tour reload never re-traps;
+  // "Show me around" in the masthead replays it anytime.
+  useEffect(() => {
+    if (!loaded) return undefined;
+    let seen = null;
+    try { seen = localStorage.getItem(TOUR_SEEN_KEY); } catch { seen = "1"; }
+    if (seen) return undefined;
+    const t = setTimeout(() => {
+      try { localStorage.setItem(TOUR_SEEN_KEY, "1"); } catch { /* ignore */ }
+      setTourOpen(true);
+    }, 700);
+    return () => clearTimeout(t);
+  }, [loaded]);
+
   // Evidence check: has the newest ended week's cash/check count actually been
   // entered in LGL? The Mon/Thu import schedule is a plan, not a guarantee, so
   // the weekly model prefers this over the calendar when it can tell.
@@ -421,6 +440,7 @@ export default function DashboardV2() {
         authUser={authUser} fileName={fileName}
         giftCount={rawGifts.length} fundCount={funds.length}
         dataLoadedAt={dataLoadedAt} dataTimeKnown={dataTimeKnown} importDate={importDate} plateStatus={plateStatus} now={now}
+        onStartTour={() => setTourOpen(true)}
       />
 
       {banner && (
@@ -447,7 +467,7 @@ export default function DashboardV2() {
             }}>Done</button>
           </>
         ) : (
-          <button onClick={() => setArranging(true)} style={{
+          <button data-tour="customize" onClick={() => setArranging(true)} style={{
             background: "none", border: "none", color: T.ink3, fontSize: 12.5,
             fontWeight: 600, cursor: "pointer", fontFamily: T.sans, padding: 0,
           }}>⠿ Customize layout</button>
@@ -518,6 +538,7 @@ export default function DashboardV2() {
         return (
           <SectionShell
             key={id}
+            id={id}
             label={meta?.label || id}
             index={i}
             count={sectionOrder.length}
@@ -554,6 +575,8 @@ export default function DashboardV2() {
         Gifts aggregated by calendar month per fund; weekly detail from live 2025+ data. Fiscal year begins July 1.
         Dashed straight lines show the trend over complete months.
       </div>
+
+      <Tour open={tourOpen} onClose={() => setTourOpen(false)} />
     </Shell>
   );
 }
