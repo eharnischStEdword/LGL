@@ -40,6 +40,72 @@ function useFundColors(selectedFunds) {
   }, [selectedFunds]);
 }
 
+// ── Per-user saved layout (Robin, 2026-08-12: "too much up top", wants the
+// chart first). The five content sections can be reordered by drag or arrow
+// buttons; the order persists in this browser's localStorage, so each staff
+// member keeps their own arrangement without changing anyone else's. Sections
+// added in future versions append at the end of a saved order.
+const SECTIONS = [
+  { id: "answers", label: "Monday answers" },
+  { id: "weeks", label: "Recent weeks" },
+  { id: "chart", label: "Chart, compare & table" },
+  { id: "funds", label: "Fund list" },
+  { id: "calc", label: "Net income calculator" },
+];
+const LAYOUT_KEY = "sev2.layoutOrder";
+
+function loadSavedOrder() {
+  const known = SECTIONS.map(s => s.id);
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "[]");
+    const valid = (Array.isArray(saved) ? saved : []).filter(id => known.includes(id));
+    for (const id of known) if (!valid.includes(id)) valid.push(id);
+    return valid;
+  } catch {
+    return known;
+  }
+}
+
+function SectionShell({ label, index, count, arranging, onMove, onDragStart, onDragEnter, onDragEnd, children }) {
+  if (!arranging) return children;
+  const arrowBtn = {
+    border: `1px solid ${T.hairline}`, background: T.card, borderRadius: 5,
+    color: T.greenDark, fontSize: 13, fontWeight: 700, cursor: "pointer",
+    padding: "2px 9px", fontFamily: T.sans, lineHeight: 1.4,
+  };
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragEnter={onDragEnter}
+      onDragOver={e => e.preventDefault()}
+      onDragEnd={onDragEnd}
+      style={{
+        border: `2px dashed ${T.green}55`, borderRadius: 12, marginBottom: 14,
+        background: `${T.green}06`, cursor: "grab",
+      }}
+    >
+      <div style={{
+        display: "flex", alignItems: "center", gap: 10, padding: "8px 14px",
+        borderBottom: `1px dashed ${T.green}30`, fontFamily: T.sans,
+      }}>
+        <span aria-hidden style={{ color: T.ink3, fontSize: 15, letterSpacing: 2 }}>⠿</span>
+        <span style={{ fontWeight: 700, color: T.greenDark, fontSize: 14 }}>{label}</span>
+        <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          <button style={{ ...arrowBtn, opacity: index === 0 ? 0.35 : 1 }} disabled={index === 0}
+            onClick={() => onMove(-1)} title="Move up">▲</button>
+          <button style={{ ...arrowBtn, opacity: index === count - 1 ? 0.35 : 1 }} disabled={index === count - 1}
+            onClick={() => onMove(1)} title="Move down">▼</button>
+        </span>
+      </div>
+      {/* Content is inert while arranging so a drag never clicks a control */}
+      <div style={{ pointerEvents: "none", opacity: 0.92, padding: "10px 10px 0" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // Normalize any date value to YYYY-MM-DD for dedup (v1 semantics)
 function normDate(val) {
   if (!val) return "";
@@ -85,6 +151,24 @@ export default function DashboardV2() {
   const [tableMode, setTableMode] = useState("fy");
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const ledgerRef = useRef(null);
+
+  const [sectionOrder, setSectionOrder] = useState(loadSavedOrder);
+  const [arranging, setArranging] = useState(false);
+  const dragIdx = useRef(null);
+  const moveSection = useCallback((index, dir) => {
+    setSectionOrder(prev => {
+      const next = [...prev];
+      const j = index + dir;
+      if (j < 0 || j >= next.length) return prev;
+      [next[index], next[j]] = [next[j], next[index]];
+      try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  const resetOrder = useCallback(() => {
+    try { localStorage.removeItem(LAYOUT_KEY); } catch { /* ignore */ }
+    setSectionOrder(SECTIONS.map(s => s.id));
+  }, []);
 
   const now = useMemo(() => new Date(), []);
 
@@ -346,59 +430,125 @@ export default function DashboardV2() {
         }}>{banner}</div>
       )}
 
-      <AnswerBand
-        weeklyModel={weeklyModel}
-        weeklyFundLabel={weeklyFundLabel}
-        fyTrend={offertoryFund ? fyTrends.map[offertoryFund] : null}
-        movers={movers}
-        moversWindowLabel={moversWindow}
-        rawGifts={rawGifts}
-        offertoryFund={offertoryFund}
-        now={now}
-      />
+      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, margin: "-4px 0 10px", fontFamily: T.sans }}>
+        {arranging ? (
+          <>
+            <span style={{ fontSize: 12.5, color: T.ink2 }}>
+              Drag sections (or use the arrows) into the order you like. Your order saves on this computer.
+            </span>
+            <button onClick={resetOrder} style={{
+              background: "none", border: `1px solid ${T.hairline}`, borderRadius: 6,
+              color: T.ink2, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+              padding: "5px 12px", fontFamily: T.sans,
+            }}>Reset order</button>
+            <button onClick={() => setArranging(false)} style={{
+              background: T.green, border: "none", borderRadius: 6, color: "#fff",
+              fontSize: 12.5, fontWeight: 700, cursor: "pointer", padding: "6px 14px", fontFamily: T.sans,
+            }}>Done</button>
+          </>
+        ) : (
+          <button onClick={() => setArranging(true)} style={{
+            background: "none", border: "none", color: T.ink3, fontSize: 12.5,
+            fontWeight: 600, cursor: "pointer", fontFamily: T.sans, padding: 0,
+          }}>⠿ Customize layout</button>
+        )}
+      </div>
 
-      <RecentWeeks
-        weeklyModel={weeklyModel}
-        weeklyFund={weeklyFund}
-        funds={funds}
-        onFundChange={setWeeklyFund}
-        fyPace={fyPace}
-        now={now}
-      />
-
-      <EvidenceSection
-        giftIndex={giftIndex}
-        selectedFunds={selectedFunds}
-        showAllFundsTotal={showAllFundsTotal}
-        fundColorMap={fundColorMap}
-        fundCount={funds.length}
-        now={now}
-        period={period} setPeriod={setPeriod}
-        view={view} setView={setView}
-        chartType={chartType} setChartType={setChartType}
-        useLogScale={useLogScale} setUseLogScale={setUseLogScale}
-        basis={basis} setBasis={setBasis}
-        tableMode={tableMode} setTableMode={setTableMode}
-        onOpenLedger={openLedger}
-      />
-
-      <FundLedger
-        funds={funds}
-        giftIndex={giftIndex}
-        monthBuckets={monthBuckets}
-        periodLabel={periodLabel}
-        selectedFunds={selectedFunds}
-        toggleFund={toggleFund}
-        showAllFundsTotal={showAllFundsTotal}
-        setShowAllFundsTotal={setShowAllFundsTotal}
-        trendMap={fyTrends.map}
-        isOffertoryOnly={offertoryOnly}
-        open={ledgerOpen}
-        setOpen={setLedgerOpen}
-        ledgerRef={ledgerRef}
-      />
-
-      <NetIncomeCalc />
+      {sectionOrder.map((id, i) => {
+        const meta = SECTIONS.find(s => s.id === id);
+        const nodes = {
+          answers: (
+            <AnswerBand
+              weeklyModel={weeklyModel}
+              weeklyFundLabel={weeklyFundLabel}
+              fyTrend={offertoryFund ? fyTrends.map[offertoryFund] : null}
+              movers={movers}
+              moversWindowLabel={moversWindow}
+              rawGifts={rawGifts}
+              offertoryFund={offertoryFund}
+              now={now}
+            />
+          ),
+          weeks: (
+            <RecentWeeks
+              weeklyModel={weeklyModel}
+              weeklyFund={weeklyFund}
+              funds={funds}
+              onFundChange={setWeeklyFund}
+              fyPace={fyPace}
+              now={now}
+            />
+          ),
+          chart: (
+            <EvidenceSection
+              giftIndex={giftIndex}
+              selectedFunds={selectedFunds}
+              showAllFundsTotal={showAllFundsTotal}
+              fundColorMap={fundColorMap}
+              fundCount={funds.length}
+              now={now}
+              period={period} setPeriod={setPeriod}
+              view={view} setView={setView}
+              chartType={chartType} setChartType={setChartType}
+              useLogScale={useLogScale} setUseLogScale={setUseLogScale}
+              basis={basis} setBasis={setBasis}
+              tableMode={tableMode} setTableMode={setTableMode}
+              onOpenLedger={openLedger}
+            />
+          ),
+          funds: (
+            <FundLedger
+              funds={funds}
+              giftIndex={giftIndex}
+              monthBuckets={monthBuckets}
+              periodLabel={periodLabel}
+              selectedFunds={selectedFunds}
+              toggleFund={toggleFund}
+              showAllFundsTotal={showAllFundsTotal}
+              setShowAllFundsTotal={setShowAllFundsTotal}
+              trendMap={fyTrends.map}
+              isOffertoryOnly={offertoryOnly}
+              open={ledgerOpen}
+              setOpen={setLedgerOpen}
+              ledgerRef={ledgerRef}
+            />
+          ),
+          calc: <NetIncomeCalc />,
+        };
+        return (
+          <SectionShell
+            key={id}
+            label={meta?.label || id}
+            index={i}
+            count={sectionOrder.length}
+            arranging={arranging}
+            onMove={(dir) => moveSection(i, dir)}
+            onDragStart={(e) => { dragIdx.current = i; e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", id); } catch { /* older browsers */ } }}
+            onDragEnter={() => {
+              const from = dragIdx.current;
+              if (from == null || from === i) return;
+              setSectionOrder(prev => {
+                const next = [...prev];
+                const [moved] = next.splice(from, 1);
+                next.splice(i, 0, moved);
+                return next;
+              });
+              dragIdx.current = i;
+            }}
+            onDragEnd={() => {
+              dragIdx.current = null;
+              // Functional update so we always persist the final preview order,
+              // never a stale closure from the render where the drag began.
+              setSectionOrder(prev => {
+                try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(prev)); } catch { /* ignore */ }
+                return prev;
+              });
+            }}
+          >
+            {nodes[id]}
+          </SectionShell>
+        );
+      })}
 
       <div style={{ margin: "18px 0 8px", fontSize: 12.5, color: T.ink3, textAlign: "center" }}>
         Gifts aggregated by calendar month per fund; weekly detail from live 2025+ data. Fiscal year begins July 1.

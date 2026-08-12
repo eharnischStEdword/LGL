@@ -120,6 +120,11 @@ docs/v2-proposal.html. Answer-first single page: Monday briefing (three answer
 blocks + Copy for Bulletin, payload byte-identical to v1), Recent Weeks panel,
 evidence chart with Period/View segmented controls, merged Compare Years view
 (computed years, on-screen deltas), ranked fund ledger, pivot table.
+- Saved layout (2026-08-12, from Robin's "too much up top"): the five content
+  sections reorder by drag or arrows ("Customize layout" above the answer
+  band) and persist per browser in localStorage key sev2.layoutOrder; unknown
+  ids are dropped and new sections append, so layout upgrades are safe. The
+  default order is unchanged; each user arranges their own.
 - Weekly rules: weeks run Mon-Sun labeled by ending Sunday; a week is complete
   from the THURSDAY after its Sunday (calendar fallback; the newest week
   prefers plate-status EVIDENCE — see Key Facts); provisional weeks render striped gold,
