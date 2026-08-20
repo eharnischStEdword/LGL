@@ -59,12 +59,18 @@ const GIFTS = [
 // A stand-in for server.js, wired in the SAME order: the exact exit path, the
 // refusal for everything else under /api/hub, then the SPA catch-all that
 // answers 200 with the dashboard shell for any unknown path.
-function makeApp({ gifts = GIFTS, hasApiKey = true, fail = null, calls = [] } = {}) {
+function makeApp({ gifts = GIFTS, hasApiKey = true, fail = null, failAxis = null,
+                  calls = [] } = {}) {
   const app = express();
   app.get("/api/hub/v1/metrics", hubMetricsHandler({
     fetchGiftsAxis: async (term) => {
       calls.push(term);
       if (fail) throw new Error(fail);
+      // failAxis fails ONE axis and answers on the other, which is what the
+      // live LGL API does: it rejects gift_date_from and accepts updated_from.
+      if (failAxis && term.startsWith(failAxis)) {
+        throw new Error(`LGL API 400: Unknown query parameter: ${failAxis}`);
+      }
       return gifts;
     },
     hasApiKey: () => hasApiKey,
@@ -156,8 +162,14 @@ test("the numbers are right", async () => {
     assert.equal(body.freshness.last_record_at, "2026-08-18");
     assert.ok(body.generated_at);
 
-    // Filtered on received_date, asked of LGL on the gift-date axis.
-    assert.deepEqual(calls, [`gift_date_from=${FROM}`]);
+    // Asked on updated_from, which is the axis LGL actually accepts, with a
+    // lookback so a gift entered ahead of the day it is received is still
+    // caught, and everything filtered on received_date afterwards.
+    assert.equal(calls.length, 2);
+    assert.match(calls[0], /^updated_from=\d{4}-\d{2}-\d{2}$/);
+    assert.ok(calls[0].slice("updated_from=".length) < FROM,
+      "updated_from should reach back before the window");
+    assert.match(calls[1], /^gift_date_from=/);
   });
 });
 
@@ -275,4 +287,35 @@ test("money is whole cents", () => {
   assert.equal(toCents(0.1 + 0.2), 30);
   assert.equal(toCents(null), 0);
   assert.equal(toCents("not a number"), 0);
+});
+
+
+test("a gift_date_from rejection is not fatal, because LGL does not accept that key", async () => {
+  // LGL answers 400 Unknown query parameter for gift_date_from, and has done
+  // since at least 2026-08-17 where a fallback in the plate detector hides it.
+  // Asking for that axis alone, as this route first did, made every read fail.
+  withToken(TOKEN);
+  const calls = [];
+  await serve(makeApp({ calls, failAxis: "gift_date_from" }), async (base) => {
+    const resp = await get(base, "/api/hub/v1/metrics" + RANGE, TOKEN);
+    assert.equal(resp.status, 200, "a rejected second axis must not fail the read");
+    const body = await resp.json();
+    assert.equal(body.freshness.records_in_period, 6);
+  });
+  assert.ok(calls.some((c) => c.startsWith("updated_from")),
+    "the working axis was never asked");
+});
+
+test("a gift entered weeks before the Sunday it lands on is still caught", async () => {
+  // updated_from selects on when the RECORD was touched, and everything
+  // downstream buckets on received_date. Without a lookback a pledge typed in
+  // early is invisible in the week it is actually received.
+  withToken(TOKEN);
+  const calls = [];
+  await serve(makeApp({ calls, failAxis: "gift_date_from" }), async (base) => {
+    await get(base, "/api/hub/v1/metrics" + RANGE, TOKEN);
+  });
+  const asked = calls.find((c) => c.startsWith("updated_from")).slice("updated_from=".length);
+  const days = (new Date(FROM + "T00:00:00Z") - new Date(asked + "T00:00:00Z")) / 86400000;
+  assert.ok(days >= 30, `lookback reached back only ${days} days before the window`);
 });

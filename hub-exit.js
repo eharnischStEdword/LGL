@@ -208,6 +208,58 @@ export function buildPayload({ from, to, summary, generatedAt }) {
   };
 }
 
+// How far before the window to start looking, so a gift entered ahead of the day
+// it is received is still caught. updated_from selects on when the RECORD was
+// touched, and everything downstream buckets on received_date, so a pledge typed
+// in three weeks early would otherwise be invisible in the week it lands.
+export const ENTRY_LOOKBACK_DAYS = 45;
+
+// Ask LGL for everything that could belong to this window, on whichever axis it
+// will actually answer.
+//
+// `gift_date_from` is NOT a parameter LGL accepts. It answers
+// 400 Unknown query parameter, and it has been doing so in the plate detector
+// since at least 2026-08-17, where a fallback hides it. Asking for it alone, as
+// this route first did, made every read fail. `updated_from` is the axis this
+// repo has always relied on and is verified working against the live API.
+//
+// updated_from alone has a known blind spot, recorded beside fetchLGLApiGifts in
+// server.js: it misses a gift received inside the window whose record has not
+// been touched since before it. The lookback above covers the ordinary version
+// of that, and gift_date_from is still tried as a second axis in case LGL ever
+// starts accepting it, with its failure swallowed rather than fatal.
+//
+// Everything is filtered on received_date afterwards regardless of how it
+// arrived, so a wider net can never widen the answer.
+export async function fetchGiftsForRange(fetchGiftsAxis, from,
+                                         lookbackDays = ENTRY_LOOKBACK_DAYS) {
+  const since = new Date(`${from}T00:00:00Z`);
+  since.setUTCDate(since.getUTCDate() - lookbackDays);
+  const sinceDay = since.toISOString().slice(0, 10);
+
+  const gifts = await fetchGiftsAxis(`updated_from=${sinceDay}`);
+
+  try {
+    const byGiftDate = await fetchGiftsAxis(`gift_date_from=${sinceDay}`);
+    const keyOf = (g) => String(
+      (g && g.id) != null
+        ? g.id
+        : `${g && g.received_date}|${g && g.received_amount}|${g && g.fund_name}`);
+    const seen = new Set(gifts.map(keyOf));
+    for (const g of byGiftDate) {
+      const k = keyOf(g);
+      if (!seen.has(k)) { gifts.push(g); seen.add(k); }
+    }
+  } catch (err) {
+    // Expected today. Logged at info because it is the known state of the LGL
+    // API, not a new fault, and updated_from already answered.
+    console.log(`[hub-exit] gift_date_from axis unavailable (${err && err.message}), using updated_from only`);
+  }
+
+  return gifts;
+}
+
+
 // ─── The route ───
 //
 // fetchGiftsAxis is server.js's fetchLGLApiGiftsAxis, passed in so this module
@@ -235,9 +287,7 @@ export function hubMetricsHandler({ fetchGiftsAxis, hasApiKey }) {
 
     let raw;
     try {
-      // Same axis the plate-status detector uses, then filtered on
-      // received_date. See receivedDay above for why that field.
-      raw = await fetchGiftsAxis(`gift_date_from=${from}`);
+      raw = await fetchGiftsForRange(fetchGiftsAxis, from);
     } catch (err) {
       // The upstream message is logged, not returned: it is LGL's text and this
       // payload is read by a machine.
