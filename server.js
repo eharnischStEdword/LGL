@@ -5,6 +5,13 @@ import zlib from "zlib";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import * as XLSX from "xlsx";
+import {
+  hubMetricsHandler,
+  isPlateType,
+  paymentTypeOf,
+  OFFERTORY_FUND,
+  PAGE_CAP_SUSPECT,
+} from "./hub-exit.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -512,7 +519,7 @@ async function hybridFetch(permanentLinkUrl, fundFilter, res, axis) {
 // Hybrid endpoints
 app.get("/api/lgl-data-hybrid", requireAuth, async (req, res) => {
   const axis = req.query.axis === "union" ? "union" : undefined; // v1 sends nothing
-  try { await hybridFetch(LGL_OFFERTORY_URL, "Offertory", res, axis); }
+  try { await hybridFetch(LGL_OFFERTORY_URL, OFFERTORY_FUND, res, axis); }
   catch (err) { console.error("Hybrid fetch error:", err); res.status(502).json({ error: err.message }); }
 });
 
@@ -597,17 +604,16 @@ app.get("/api/lgl-plate-status", requireAuth, async (req, res) => {
     const raw = await fetchLGLApiGiftsAxis(`gift_date_from=${fmtDay(weekStart)}`);
     // If LGL ignored the key and dumped everything, the page cap may have
     // truncated the dump before this week's gifts — evidence unreliable.
-    const capped = raw.length >= 4900;
+    const capped = raw.length >= PAGE_CAP_SUSPECT;
     const items = raw.filter(g => {
       const d = g.received_date || "";
       return d >= fmtDay(weekStart) && d <= weekKey;
     });
-    const typeOf = (g) => g.payment_type_name || (g.payment_type && g.payment_type.name) || null;
+    const typeOf = paymentTypeOf; // shared with the hub exit
     const types = [...new Set(items.map(typeOf).filter(Boolean))];
     const typed = items.filter(g => typeOf(g));
-    // Word-boundary match so eCheck / E-Check (ACH) / Cash App — online types
-    // that would land by Monday — cannot fake the plate count arriving.
-    const isPlateType = (t) => /\b(cash|check)\b/i.test(t) && !/e-?check/i.test(t) && !/cash app/i.test(t);
+    // isPlateType is imported from hub-exit.js so the plate/online split has
+    // exactly one definition. The PLT hub reads the same predicate.
     const plateLanded = capped || typed.length === 0
       ? null
       : typed.some(g => isPlateType(typeOf(g)));
@@ -619,6 +625,24 @@ app.get("/api/lgl-plate-status", requireAuth, async (req, res) => {
     console.warn(`[plate] detector failed (${err.message}) — client falls back to calendar rule`);
     res.json({ week: weekKey, plateLanded: null, error: err.message });
   }
+});
+
+// ─── PLT hub exit: read-only aggregates on a machine token ───
+// EXACT path, and deliberately NOT requireAuth. requireAuth is session based,
+// and the auth gate below waves through anything whose path starts with "/api",
+// so this route checks its own bearer token in constant time. Aggregates only:
+// no donor name, no email, no gift id, no address. See hub-exit.js and
+// docs/exit-contract.md in the st-edward-plt-dashboard repo.
+app.get("/api/hub/v1/metrics", hubMetricsHandler({
+  fetchGiftsAxis: fetchLGLApiGiftsAxis,
+  hasApiKey: () => Boolean(LGL_API_KEY),
+}));
+
+// Anything else under /api/hub is refused right here. Without this it would fall
+// through to the SPA catch-all at the bottom and answer 200 with the dashboard
+// shell, which is not data but is also not a "no".
+app.use("/api/hub", (req, res) => {
+  res.status(404).json({ error: "no such endpoint" });
 });
 
 // ─── Auth gate: redirect unauthenticated users to login ───

@@ -10,6 +10,7 @@ Branded with official St. Edward colors. Data is fetched from LGL permanent link
 - `npm run build` - Production build to dist/
 - `npm run preview` - Preview production build locally
 - `node server.js` - Start production server (serves dist/ + API routes)
+- `npm test` - Run the hub-exit tests (node's built-in runner, no extra deps)
 
 ## Deploy
 Push to main branch. Render auto-deploys from GitHub.
@@ -45,6 +46,9 @@ Push to main branch. Render auto-deploys from GitHub.
 - LGL_API_KEY — LGL API key for real-time gift top-up
 - SESSION_SECRET — auto-generated if not set
 - ALLOWED_DASHBOARD_USERS — comma-separated authorized emails
+- HUB_EXIT_TOKEN: shared secret for the PLT hub's read-only exit (see below).
+  Unset means the exit answers 503 and the hub records nothing, which is the
+  correct state until the same value is set on both sides.
 
 ## Brand Colors (from official style guide)
 - Green PMS 348C: #00843D (primary), #005921 (dark)
@@ -83,6 +87,29 @@ Push to main branch. Render auto-deploys from GitHub.
   different names. (The gift report/CSV paths still expose no payment type;
   only this server-side API check sees it.)
 - 5-minute server-side cache on hybrid/recent endpoints
+
+## PLT hub exit (added 2026-08-20)
+`GET /api/hub/v1/metrics?from=YYYY-MM-DD&to=YYYY-MM-DD`, implemented in
+hub-exit.js and wired in server.js. Version 1 of the exit contract in
+`docs/exit-contract.md` in the st-edward-plt-dashboard repo. The Service System
+implements the same contract in hub_exit.py; keep the two in step.
+- Auth is a bearer token compared in constant time against HUB_EXIT_TOKEN. It is
+  NOT requireAuth: the session gate lets everything under /api through, so this
+  route owns its own door. The path is matched exactly, and anything else under
+  /api/hub is refused with a 404 so a near miss cannot fall through to the SPA.
+- Returns two figures for the Offertory fund, both in whole cents:
+  `giving.lgl_plate` (cash and check, what came in the basket) and
+  `giving.lgl_online` (every other payment type). The plate/online predicate is
+  `isPlateType` in hub-exit.js, the SAME one the v2 plate-status detector uses.
+- Gifts are filtered on `received_date`, the field the plate detector uses,
+  because the hub sets these beside a hand count of the same Sunday.
+- A gift with no payment type is counted in NEITHER figure and disclosed in the
+  freshness signals (`unclassified`, `unclassified_cents`), so the plate can
+  never quietly under-report.
+- Failure is silence, not a wrong number: an LGL read that fails, or one at the
+  page cap where the result may be truncated, returns a non-200 with an `error`.
+  It never returns zeros, because a zero is a claim that nothing was given.
+- Aggregates only. No donor name, no email, no gift id, no address, ever.
 
 ## Historical Data
 - HISTORICAL_MONTHLY constant in Dashboard.jsx contains pre-aggregated monthly gift

@@ -16,8 +16,15 @@ services:
       - key: TENANT_ID
         sync: false
       - key: REDIRECT_URI
-        value: https://lgl-dashboard.onrender.com/auth/callback
+        value: https://lgl.onrender.com/auth/callback
       - key: SESSION_SECRET
         generateValue: true
+      # Shared secret the PLT hub sends as "Authorization: Bearer <token>" to
+      # GET /api/hub/v1/metrics. Unset means the exit answers 503 and reports
+      # nothing, so this ships inert: Render does not prompt for sync: false
+      # values when it updates an existing blueprint, and the same value has to
+      # be set by hand here and on the hub before anything is read.
+      - key: HUB_EXIT_TOKEN
+        sync: false
       - key: ALLOWED_DASHBOARD_USERS
         value: eharnisch@stedward.org,rcarroll@stedward.org,sblankenship@stedward.org,klewis@stedward.org,fatherbulso@stedward.org
