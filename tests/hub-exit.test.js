@@ -17,8 +17,7 @@ import {
   paymentTypeOf,
   summarizeOffertory,
   toCents,
-  PAGE_CAP_SUSPECT,
-} from "../hub-exit.js";
+  PAGE_CAP_SUSPECT, _resetDump } from "../hub-exit.js";
 
 const TOKEN = "test-hub-token-do-not-use-anywhere-real";
 const FROM = "2026-08-10";
@@ -61,6 +60,10 @@ const GIFTS = [
 // answers 200 with the dashboard shell for any unknown path.
 function makeApp({ gifts = GIFTS, hasApiKey = true, fail = null, failAxis = null,
                   calls = [] } = {}) {
+  // The gift dump is cached across requests so a backfill does not re-pull
+  // months per week. Each test starts from cold, or one test's dump answers
+  // the next test's request.
+  _resetDump();
   const app = express();
   app.get("/api/hub/v1/metrics", hubMetricsHandler({
     fetchGiftsAxis: async (term) => {
@@ -318,4 +321,42 @@ test("a gift entered weeks before the Sunday it lands on is still caught", async
   const asked = calls.find((c) => c.startsWith("updated_from")).slice("updated_from=".length);
   const days = (new Date(FROM + "T00:00:00Z") - new Date(asked + "T00:00:00Z")) / 86400000;
   assert.ok(days >= 30, `lookback reached back only ${days} days before the window`);
+});
+
+test("a run of weeks reuses one dump instead of re-pulling months each time", async () => {
+  // A backfill asks for consecutive weeks. Each one alone re-pulled months of
+  // gifts a hundred at a time, and thirteen weeks timed out.
+  const { fetchGiftsForRange, _resetDump } = await import("../hub-exit.js");
+  _resetDump();
+  let pulls = 0;
+  const axis = async (q) => {
+    if (q.startsWith("gift_date_from")) throw new Error("400");
+    pulls++;
+    return GIFTS;
+  };
+  // Oldest week first, the order the backfill actually walks.
+  await fetchGiftsForRange(axis, "2026-05-18");
+  const afterFirst = pulls;
+  await fetchGiftsForRange(axis, "2026-05-25");
+  await fetchGiftsForRange(axis, "2026-06-01");
+  assert.equal(afterFirst, 1);
+  assert.equal(pulls, 1, `later weeks re-pulled: ${pulls} dumps for 3 weeks`);
+  _resetDump();
+});
+
+test("a week older than the cached dump is pulled again rather than under-read", async () => {
+  // The cached dump only covers back to its own since date. Reusing it for an
+  // OLDER week would silently under-report that week.
+  const { fetchGiftsForRange, _resetDump } = await import("../hub-exit.js");
+  _resetDump();
+  let pulls = 0;
+  const axis = async (q) => {
+    if (q.startsWith("gift_date_from")) throw new Error("400");
+    pulls++;
+    return GIFTS;
+  };
+  await fetchGiftsForRange(axis, "2026-06-01");
+  await fetchGiftsForRange(axis, "2026-01-05");
+  assert.equal(pulls, 2, "an older week must not reuse a shallower dump");
+  _resetDump();
 });

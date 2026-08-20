@@ -231,11 +231,30 @@ export const ENTRY_LOOKBACK_DAYS = 45;
 //
 // Everything is filtered on received_date afterwards regardless of how it
 // arrived, so a wider net can never widen the answer.
+// One cached dump, and the date it reaches back to. A backfill asks for a run of
+// consecutive weeks, and each week alone would re-pull months of gifts from LGL
+// a hundred at a time: thirteen weeks timed out at twenty seconds a piece.
+//
+// The dump for an EARLIER date is a superset of the dump for a later one, so a
+// request that needs less than what is already held reuses it. Every caller
+// filters on received_date afterwards regardless, so reusing a wider dump can
+// never widen an answer.
+const dump = { since: null, gifts: null, at: 0 };
+export const DUMP_TTL_MS = 10 * 60 * 1000;
+
+export function _resetDump() { dump.since = null; dump.gifts = null; dump.at = 0; }
+
 export async function fetchGiftsForRange(fetchGiftsAxis, from,
-                                         lookbackDays = ENTRY_LOOKBACK_DAYS) {
+                                         lookbackDays = ENTRY_LOOKBACK_DAYS,
+                                         now = Date.now()) {
   const since = new Date(`${from}T00:00:00Z`);
   since.setUTCDate(since.getUTCDate() - lookbackDays);
   const sinceDay = since.toISOString().slice(0, 10);
+
+  const fresh = dump.gifts && now - dump.at < DUMP_TTL_MS;
+  if (fresh && dump.since <= sinceDay) {
+    return dump.gifts;
+  }
 
   const gifts = await fetchGiftsAxis(`updated_from=${sinceDay}`);
 
@@ -256,6 +275,9 @@ export async function fetchGiftsForRange(fetchGiftsAxis, from,
     console.log(`[hub-exit] gift_date_from axis unavailable (${err && err.message}), using updated_from only`);
   }
 
+  dump.since = sinceDay;
+  dump.gifts = gifts;
+  dump.at = now;
   return gifts;
 }
 
