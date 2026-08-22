@@ -76,18 +76,29 @@ Push to main branch. Render auto-deploys from GitHub.
   money is USUALLY in LGL by Thursday; Eric's manual export-imports are
   PLANNED for Monday and Thursday but are manual and can slip — never
   hard-code that schedule (Eric, 2026-08-11: "you're being too rigid").
-- Evidence-based completeness (v1.3.0): /api/lgl-plate-status asks the LGL
-  API whether any gift in the newest ended week carries a check/cash
-  payment_type_name. true → week completes from WEDNESDAY (count day);
+- Evidence-based completeness (v1.3.0, REPAIRED 2026-08-22): /api/lgl-plate-status
+  asks the LGL API whether any OFFERTORY gift in the newest ended week carries a
+  check/cash payment_type_name. true → week completes from WEDNESDAY (count day);
   false → stays "counting" past Thursday until the count actually lands;
-  null (no key, API error, no payment-type fields, suspected ignored-key
-  dump) → calendar fallback: complete from THURSDAY after the ending Sunday.
-  Older weeks are always calendar. UNVERIFIED ON LIVE: the payment_type_name
-  values St. Edward actually uses — the endpoint returns a `types` array and
-  logs `[plate]` lines on Render; check once after deploy that plate weeks
-  show types matching /check|cash/i, and update the regex if the parish uses
-  different names. (The gift report/CSV paths still expose no payment type;
-  only this server-side API check sees it.)
+  null (no key, API error, no payment-type fields, or a read that could not be
+  proved complete) → calendar fallback: complete from THURSDAY after the ending
+  Sunday. Older weeks are always calendar.
+- IT WAS DEAD FROM 2026-08-17 TO 2026-08-22 AND NOTHING SAID SO. The detector
+  queried `gift_date_from`, which LGL rejects with 400 Unknown query parameter,
+  and the route's catch turned every rejection into null, so v2 silently ran on
+  the calendar rule for five days. The logic now lives in `plate-status.js`,
+  reads through the same `fetchGiftsForRange` the hub exit uses (updated_from,
+  45-day lookback, proved complete against LGL's own total_items, one shared
+  dump), and `tests/plate-status.test.js` asserts the first thing asked is
+  updated_from. Two behaviour changes went in with it: the count is Offertory
+  only (a cash gift to another fund used to say the plate had landed), and a
+  read that did not finish answers null rather than false.
+- STILL UNVERIFIED ON LIVE: the payment_type_name values St. Edward actually
+  uses — the endpoint returns a `types` array and logs `[plate]` lines on
+  Render; check once after deploy that plate weeks show types matching
+  /check|cash/i, and update the regex if the parish uses different names. (The
+  gift report/CSV paths still expose no payment type; only this server-side API
+  check sees it.)
 - 5-minute server-side cache on hybrid/recent endpoints
 
 ## PLT hub exit (added 2026-08-20)
@@ -126,9 +137,9 @@ implements the same contract in hub_exit.py; keep the two in step.
   its weeks back to back, so a pull too big for one request finishes inside the
   same run.
 - Paging and retry live in `lgl-api.js`: `fetchLGLApiGiftsAxis` is the original
-  50-page walk (hybrid, recent-gifts and the plate detector still use it,
-  unchanged) and `fetchLGLApiGiftsPaged` is the one that reports whether it
-  finished. Both retry a 429 or a 5xx with a short backoff, which is the first
+  50-page walk (hybrid and recent-gifts still use it, unchanged; the plate
+  detector moved off it on 2026-08-22) and `fetchLGLApiGiftsPaged` is the one
+  that reports whether it finished. Both retry a 429 or a 5xx with a short backoff, which is the first
   rate-limit handling this repo has ever had. LGL's actual limits are NOT
   verified; 429-with-Retry-After is an assumption written down in that file.
 - Aggregates only. No donor name, no email, no gift id, no address, ever.

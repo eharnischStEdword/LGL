@@ -92,7 +92,7 @@ Auto-deploys on every push to main.
 
 These are documented and intentionally deferred:
 
-- The recent-gifts API top-up filters by gift **update** date, but the dashboard buckets gifts by gift (**received**) date. A gift received after the daily report yet last edited before it can be missed until the next export catches it. Switching the query in `server.js` to `gift_date_from` is the fix, and it needs validation against a live LGL API key first so the top-up is not silently disabled.
+- The recent-gifts API top-up filters by gift **update** date, but the dashboard buckets gifts by gift (**received**) date. A gift received after the daily report yet last edited before it can be missed until the next export catches it. **`gift_date_from` is NOT the fix**: LGL answers `400 Unknown query parameter` for it, verified against the live API, and asking for it is what killed the plate-status detector for five days in August 2026. The working shape is `updated_from` with a lookback wide enough to cover late entry, then a filter on `received_date` — which is what `fetchGiftsForRange` in `hub-exit.js` does for the hub exit and the plate detector.
 - The Year-over-Year view currently hardcodes calendar years 2025 and 2026.
 
 ## Brand colors
