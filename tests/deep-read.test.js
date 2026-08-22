@@ -278,10 +278,16 @@ test("the ceiling in the shipped configuration is above the whole gift database"
   // and every query reaching past that day returns all of it at once. There is
   // no rate that predicts that, and the only honest bound is the size of the
   // database: an updated_from query cannot return more rows than LGL holds.
-  const giftsInTheWholeDatabase = 63000;  // CLAUDE.md, the historical import
-  assert.ok(MAX_RECORDS > giftsInTheWholeDatabase,
-    "the ceiling must be above every gift LGL holds, because one bulk edit " +
-    "can make a single query ask for all of them");
+  // MEASURED, not reasoned, and the first two attempts at this number were both
+  // reasoned and both wrong. 25,000 came from a gift rate. 75,000 came from the
+  // 63,000 in CLAUDE.md, which was the historical import through December 2024
+  // with two years missing off the end. The live refusal log gave the real one:
+  // "LGL reports 80152 records for this query", 2026-08-22.
+  const measuredDeepestQuery = 80152;
+  assert.ok(MAX_RECORDS > measuredDeepestQuery * 1.5,
+    "the ceiling must clear the deepest query LGL has actually reported, with " +
+    "room for the database to grow, because one bulk edit inside LGL can make " +
+    "a single query ask for all of it");
 });
 
 test("the deep walk asks LGL for a page far bigger than the legacy 100", () => {

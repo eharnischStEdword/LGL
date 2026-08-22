@@ -307,16 +307,25 @@ export const READ_BUDGET_MS = 60 * 1000;
 // already reporting more than 25,000 records, against a daily run three months
 // later that walked 1,750. No gift rate explains that. A bulk edit does.
 //
-// SO THE CEILING IS SIZED AGAINST THE DATABASE NOW, NOT AGAINST A RATE. An
-// `updated_from` query cannot return more rows than LGL holds, and LGL holds on
-// the order of 63,000 gifts. 75,000 is above that with room to grow, and a
-// query claiming more than that is not a big backfill: it is this code being
-// wrong about what it is talking to, which is what a ceiling should catch.
+// 75,000 WAS ALSO TOO LOW, and this time the number is measured rather than
+// reasoned. The refusal logs now, so the second attempt at the backfill said it
+// out loud: "LGL reports 80152 records for this query". The 63,000 in CLAUDE.md
+// was the historical import through December 2024 and nobody had added the two
+// years since.
+//
+// SO THE CEILING IS NOT A WORKLOAD LIMIT. The workload limits are READ_BUDGET_MS
+// and MAX_PAGES, and both of them RESUME: a walk that runs out of either keeps
+// its offset and the next request carries on, so 80,000 records is four or five
+// requests rather than a refusal. This number is the other kind of guard, the
+// one that catches this code being wrong about what it is talking to. Nothing
+// about a parish gift database plausibly doubles overnight, so 150,000 leaves
+// years of headroom and still fires long before a runaway loop could cost
+// anybody anything.
 //
 // Being wrong is still cheap in the safe direction. LGL reports total_items on
 // the first page, so a query past the ceiling is refused after ONE request
 // rather than after 250, and it is refused rather than truncated.
-export const MAX_RECORDS = 75000;
+export const MAX_RECORDS = 150000;
 
 // THREE. The same ceiling counted in requests, for the day LGL stops sending
 // total_items and the walk cannot see how far it has to go. 250 pages is
