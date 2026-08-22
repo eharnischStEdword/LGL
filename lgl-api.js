@@ -124,6 +124,11 @@ export async function fetchLGLApiGiftsPaged(queryTerm, opts = {}) {
     deadline = null,
     onPage = null,
     pageSize = LGL_DEEP_PAGE_SIZE,
+    // Injected so a test can decide when time passes. hub-exit.js already takes
+    // one for the same reason: a budget test that races the real clock fails on
+    // a Tuesday when the machine is busy, and a suite nobody trusts is worse
+    // than no suite.
+    clock = Date.now,
   } = opts || {};
 
   let offset = startOffset;
@@ -139,7 +144,7 @@ export async function fetchLGLApiGiftsPaged(queryTerm, opts = {}) {
   for (;;) {
     if (pages >= maxPages) { stoppedBy = "pages"; break; }
     if (offset - startOffset >= maxRecords) { stoppedBy = "records"; break; }
-    if (deadline !== null && Date.now() >= deadline) { stoppedBy = "budget"; break; }
+    if (deadline !== null && clock() >= deadline) { stoppedBy = "budget"; break; }
 
     let page;
     try {

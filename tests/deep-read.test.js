@@ -347,9 +347,16 @@ test("a page size LGL refuses drops to 100 and the walk still finishes", async (
 test("the wall clock stops the walk, and says so rather than lying about it", async () => {
   const gifts = buildGifts();
   const requests = [];
-  await withFakeLGL(fakeLGL({ gifts, requests, delayMs: 8 }), async () => {
+  // A HAND-CRANKED CLOCK, not the real one. This test used to set a deadline 20
+  // real milliseconds out and hope the machine got two pages done inside it; it
+  // failed once on a busy laptop on 2026-08-22, which is exactly the kind of
+  // failure that teaches people to re-run a suite instead of reading it. Time
+  // moves 10ms per look now, so the third check is past the deadline, always.
+  let ticks = 0;
+  const clock = () => 1000 + (ticks++ * 10);
+  await withFakeLGL(fakeLGL({ gifts, requests }), async () => {
     const result = await fetchLGLApiGiftsPaged("updated_from=2025-06-27",
-      { deadline: Date.now() + 20, pageSize: 100 });
+      { deadline: 1025, pageSize: 100, clock });
     assert.equal(result.complete, false, "an unfinished walk must not claim to be finished");
     assert.equal(result.stoppedBy, "budget");
     assert.ok(result.pages >= 1 && result.pages < 5,
