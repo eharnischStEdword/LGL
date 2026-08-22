@@ -16,9 +16,9 @@
 // 2. It never emits a donor name, an email address, a gift id, or an address.
 //    Every value in the payload is a sum or a count over Offertory gifts.
 //
-// 3. It fails loudly. A read that could not happen, or that the page cap may
-//    have truncated, returns an error rather than a smaller number. A number is
-//    a claim about a Sunday and a missing answer is not.
+// 3. It fails loudly. A read that could not happen, or that did not reach the
+//    end of LGL's result set, returns an error rather than a smaller number. A
+//    number is a claim about a Sunday and a missing answer is not.
 //
 // 4. Money is whole cents, always an integer, never a float.
 
@@ -35,7 +35,14 @@ export const OFFERTORY_FUND = "Offertory";
 
 // fetchLGLApiGiftsAxis stops at 50 pages of 100, so a result at or above this
 // size may have been cut off before the gifts we care about. The plate-status
-// detector treats that as "cannot tell"; this exit treats it as "cannot answer".
+// detector treats that as "cannot tell".
+//
+// This exit no longer walks that way: it pages until LGL says there is nothing
+// left (see the bounds below). The constant stays because the plate detector
+// still uses it, and because this module still ACCEPTS a fetcher that hands
+// back a bare list with no way of saying whether the list is all of them. For
+// that shape the old judgement is the only one available and is kept exactly:
+// a list at or above the cap may have been truncated, so it is refused.
 export const PAGE_CAP_SUSPECT = 4900;
 
 // Long enough for any backfill the hub might ask for, short enough that a typo
@@ -198,7 +205,7 @@ export function buildPayload({ from, to, summary, generatedAt }) {
         { key: "unclassified_cents", value: summary.unclassifiedCents,
           note: "how much money those gifts carry, so the two figures can be reconciled against the fund total" },
         { key: "capped", value: 0,
-          note: "the LGL page cap did not truncate this read. A read that may have been truncated is refused, not reported" },
+          note: "the read reached the end of LGL's result set before anything was summed. A read that cannot be proved complete is refused, not reported" },
       ],
     },
     metrics: [
@@ -208,11 +215,189 @@ export function buildPayload({ from, to, summary, generatedAt }) {
   };
 }
 
+// One cached dump, the date it reaches back to, and how far through LGL's
+// result set the walk has got. A backfill asks for a run of consecutive weeks,
+// and each week alone would re-pull months of gifts from LGL a hundred at a
+// time: thirteen weeks timed out at twenty seconds a piece.
+//
+// The dump for an EARLIER date is a superset of the dump for a later one, so a
+// request that needs less than what is already held reuses it. Every caller
+// filters on received_date afterwards regardless, so reusing a wider dump can
+// never widen an answer.
+//
+// The walk is now RESUMABLE, which is the part that makes a 2025 week possible
+// at all. A deep pull that runs out of time refuses this request and keeps what
+// it collected, so the next request continues from the offset it stopped at
+// instead of starting the same thirteen months again. A backfill issues its
+// weeks back to back, so a pull too big for one budget finishes inside the same
+// run and every week after it is served from the finished dump.
+//
+// This holds gift objects in the process, and MAX_RECORDS below is what stops
+// that being unbounded. A full dump at the ceiling is tens of megabytes on a
+// Render instance that also serves the dashboard, which is a second reason the
+// ceiling is a real limit rather than a formality.
+const dump = {
+  since: null,       // the updated_from day this walk asks LGL for
+  gifts: null,       // what has landed so far, deduped
+  keys: null,        // dedupe keys for the above
+  offset: 0,         // the next offset to ask LGL for
+  totalItems: null,  // LGL's own count for this query, learned on page one
+  complete: false,   // whether the end of the result set was actually reached
+  at: 0,             // when the last page landed
+  probed: false,     // whether the gift_date_from probe has been made for it
+};
+
+// A finished dump is reusable for ten minutes: that is a freshness decision.
+export const DUMP_TTL_MS = 10 * 60 * 1000;
+
+// An UNFINISHED walk is resumable for longer, because abandoning it means a
+// deep pull can never finish and the week is never recorded, which is the exact
+// failure this module was changed to fix.
+//
+// Thirty minutes covers a hub run and its retries and does not leave a
+// half-walked offset lying around overnight. Resuming an offset walk against a
+// list that has changed underneath it is not free: LGL's gift search is not
+// known to guarantee a stable order, so a record touched mid-walk can appear on
+// two pages, which the id dedupe below absorbs, and in principle a record could
+// move to a page the walk has already passed, which nothing here could detect.
+// That risk is small across the seconds between one backfill week and the next
+// and is not worth carrying across a day. ASSUMPTION: this repo has never
+// verified LGL's default sort order for gifts/search.json.
+export const RESUME_TTL_MS = 30 * 60 * 1000;
+
+// ─── What bounds the walk now that the page cap does not ───
+//
+// The cap used to be the whole answer: 50 pages of 100, and a result at or
+// above 4,900 was refused because it might have been cut off. That was right
+// about the danger and wrong about the remedy. A week in August 2025 sets
+// updated_from to July 2025, LGL hands back every record touched since then,
+// and thirteen months of gifts is well past 4,900 rows. So every 2025 week the
+// hub asked for was refused, the hub holds about twelve weeks of giving, and
+// the dashboard's "vs a year ago" tile correctly reads no match.
+//
+// It pages through instead. Three things bound the walk, and every one of them
+// ends in a refusal rather than a short total.
+
+// ONE. Wall clock. The hub's HTTP client gives this exit 90 seconds (TIMEOUT in
+// sources.py of st-edward-plt-dashboard, read 2026-08-21). Going past that
+// turns a refusal this route could have explained into a socket timeout, which
+// reads to the hub as "the LGL service is down" and costs the weekly run the
+// full ninety seconds. Sixty leaves a third of the hub's patience for the
+// connection, the summarize pass and the reply, and a walk that hits it keeps
+// its progress for the next request rather than losing it.
+export const READ_BUDGET_MS = 60 * 1000;
+
+// TWO. A ceiling on how many records one dump may ever walk, so that one
+// malformed request cannot become an unbounded loop against somebody else's
+// API.
+//
+// Where 25,000 comes from. The deepest window this exit will accept is
+// MAX_RANGE_DAYS plus ENTRY_LOOKBACK_DAYS, 445 days. The LGL historical import
+// recorded in CLAUDE.md is about 63,000 gifts across all funds over the 66
+// months from July 2019 to December 2024, which is about 31 gifts a day, so 445
+// days is on the order of 14,000 records. 25,000 is a shade under twice that.
+// The headroom is for growth since that import ended rather than for roundness.
+// ASSUMPTION, and it is the weak point of this number: nothing in this repo
+// measures the CURRENT all-funds record rate, so this rests on the 2019-2024
+// rate not having more than doubled.
+//
+// Being wrong about it is cheap in the safe direction. LGL reports total_items
+// on the first page, so a query bigger than the ceiling is refused after ONE
+// request rather than after 250, and it is refused rather than truncated.
+export const MAX_RECORDS = 25000;
+
+// THREE. The same ceiling counted in requests, for the day LGL stops sending
+// total_items and the walk cannot see how far it has to go. 250 pages is
+// MAX_RECORDS at the 100-row page this repo asks for.
+export const MAX_PAGES = 250;
+
+// A read that did not reach the end of the result set. Separate from an
+// ordinary failure because the route says something different about it: the
+// data is fine, the request needs another go, and the next one resumes.
+export class IncompleteRead extends Error {
+  constructor(reason, message, publicMessage) {
+    super(message);
+    this.name = "IncompleteRead";
+    this.reason = reason;             // "budget" | "ceiling" | "cap"
+    this.publicMessage = publicMessage;
+  }
+}
+
+// Same key the union merge in server.js uses, so the two agree about what makes
+// two rows the same gift.
+const keyOf = (g) => String(
+  (g && g.id) != null
+    ? g.id
+    : `${g && g.received_date}|${g && g.received_amount}|${g && g.fund_name}`);
+
+export function _resetDump() {
+  dump.since = null;
+  dump.gifts = null;
+  dump.keys = null;
+  dump.offset = 0;
+  dump.totalItems = null;
+  dump.complete = false;
+  dump.at = 0;
+  dump.probed = false;
+}
+
+// TWO SHAPES OF FETCHER, and why both are allowed.
+//
+// The paged fetcher in lgl-api.js reports where it stopped and whether it
+// reached the end, which is what this module wants. A fetcher that hands back a
+// bare array cannot say whether the array is all of them, and that is the shape
+// this module was originally written against. Rather than trusting a bare array,
+// the old page-cap judgement is applied to it unchanged: a list at or above the
+// cap may have been cut off, so it counts as NOT complete and gets refused. The
+// no-silent-truncation rule then holds for both shapes in one place.
+function asProgress(result, startOffset) {
+  if (Array.isArray(result)) {
+    return {
+      items: result,
+      offset: startOffset + result.length,
+      totalItems: null,
+      complete: result.length < PAGE_CAP_SUSPECT,
+      pages: null,
+      stoppedBy: result.length < PAGE_CAP_SUSPECT ? "end" : "cap",
+    };
+  }
+  const r = result || {};
+  return {
+    items: Array.isArray(r.items) ? r.items : [],
+    offset: Number.isFinite(r.offset) ? r.offset : startOffset,
+    totalItems: Number.isFinite(r.totalItems) ? r.totalItems : null,
+    complete: r.complete === true,
+    pages: Number.isFinite(r.pages) ? r.pages : null,
+    stoppedBy: r.stoppedBy || (r.complete === true ? "end" : "unknown"),
+  };
+}
+
 // How far before the window to start looking, so a gift entered ahead of the day
 // it is received is still caught. updated_from selects on when the RECORD was
 // touched, and everything downstream buckets on received_date, so a pledge typed
 // in three weeks early would otherwise be invisible in the week it lands.
 export const ENTRY_LOOKBACK_DAYS = 45;
+
+// ONE WALK AT A TIME. Two requests resuming the same dump would both continue
+// from the same offset and both write their own idea of where it got to, so one
+// of them re-reads pages LGL has already served and the other steps over records
+// nobody read. The hub asks sequentially today and nothing else in this repo
+// touches this dump, but a slow pull now spans a minute and an overlapping run
+// is no longer far-fetched.
+let inFlight = null;
+
+export async function fetchGiftsForRange(fetchGiftsAxis, from, opts = {}) {
+  while (inFlight) {
+    await inFlight;
+  }
+  const run = walkForRange(fetchGiftsAxis, from, opts);
+  inFlight = run.catch(() => {});
+  try {
+    return await run;
+  } finally {
+    inFlight = null;
+  }
+}
 
 // Ask LGL for everything that could belong to this window, on whichever axis it
 // will actually answer.
@@ -231,63 +416,176 @@ export const ENTRY_LOOKBACK_DAYS = 45;
 //
 // Everything is filtered on received_date afterwards regardless of how it
 // arrived, so a wider net can never widen the answer.
-// One cached dump, and the date it reaches back to. A backfill asks for a run of
-// consecutive weeks, and each week alone would re-pull months of gifts from LGL
-// a hundred at a time: thirteen weeks timed out at twenty seconds a piece.
-//
-// The dump for an EARLIER date is a superset of the dump for a later one, so a
-// request that needs less than what is already held reuses it. Every caller
-// filters on received_date afterwards regardless, so reusing a wider dump can
-// never widen an answer.
-const dump = { since: null, gifts: null, at: 0 };
-export const DUMP_TTL_MS = 10 * 60 * 1000;
+async function walkForRange(fetchGiftsAxis, from, opts = {}) {
+  const {
+    lookbackDays = ENTRY_LOOKBACK_DAYS,
+    clock = Date.now,
+    budgetMs = READ_BUDGET_MS,
+    maxRecords = MAX_RECORDS,
+    maxPages = MAX_PAGES,
+  } = opts || {};
 
-export function _resetDump() { dump.since = null; dump.gifts = null; dump.at = 0; }
-
-export async function fetchGiftsForRange(fetchGiftsAxis, from,
-                                         lookbackDays = ENTRY_LOOKBACK_DAYS,
-                                         now = Date.now()) {
   const since = new Date(`${from}T00:00:00Z`);
   since.setUTCDate(since.getUTCDate() - lookbackDays);
   const sinceDay = since.toISOString().slice(0, 10);
 
-  const fresh = dump.gifts && now - dump.at < DUMP_TTL_MS;
-  if (fresh && dump.since <= sinceDay) {
+  const startedAt = clock();
+  const deadline = startedAt + budgetMs;
+
+  const reachesBack = dump.since !== null && dump.since <= sinceDay;
+  if (reachesBack && dump.complete && startedAt - dump.at < DUMP_TTL_MS) {
     return dump.gifts;
   }
 
-  const gifts = await fetchGiftsAxis(`updated_from=${sinceDay}`);
-
-  try {
-    const byGiftDate = await fetchGiftsAxis(`gift_date_from=${sinceDay}`);
-    const keyOf = (g) => String(
-      (g && g.id) != null
-        ? g.id
-        : `${g && g.received_date}|${g && g.received_amount}|${g && g.fund_name}`);
-    const seen = new Set(gifts.map(keyOf));
-    for (const g of byGiftDate) {
-      const k = keyOf(g);
-      if (!seen.has(k)) { gifts.push(g); seen.add(k); }
-    }
-  } catch (err) {
-    // Expected today. Logged at info because it is the known state of the LGL
-    // API, not a new fault, and updated_from already answered.
-    console.log(`[hub-exit] gift_date_from axis unavailable (${err && err.message}), using updated_from only`);
+  // A walk still in progress for a query that reaches back at least this far is
+  // continued rather than restarted, even when this request needs less depth
+  // than it does. Its query is a superset of this one and the received_date
+  // filter downstream is what actually decides the answer.
+  const resumable = reachesBack && !dump.complete && dump.gifts &&
+    startedAt - dump.at < RESUME_TTL_MS;
+  if (!resumable) {
+    _resetDump();
+    dump.since = sinceDay;
+    dump.gifts = [];
+    dump.keys = new Set();
+    dump.at = startedAt;
   }
 
-  dump.since = sinceDay;
-  dump.gifts = gifts;
-  dump.at = now;
-  return gifts;
+  const allowance = maxRecords - dump.offset;
+  if (allowance <= 0) {
+    const total = dump.totalItems;
+    _resetDump();
+    refuseCeiling(total, maxRecords);
+  }
+
+  // Progress is banked page by page, so a page that throws halfway through a
+  // long walk does not throw away the pages LGL already served for it.
+  const bank = (items, offset, totalItems) => {
+    for (const g of items || []) {
+      const k = keyOf(g);
+      if (dump.keys.has(k)) continue;
+      dump.keys.add(k);
+      dump.gifts.push(g);
+    }
+    dump.offset = offset;
+    if (totalItems !== null && totalItems !== undefined) dump.totalItems = totalItems;
+    dump.at = clock();
+
+    // The ceiling is checked HERE, from inside the walk, because LGL reports
+    // total_items on the first page and there is no reason to spend the rest of
+    // the budget walking towards a refusal that is already decided.
+    if (dump.totalItems !== null && dump.totalItems > maxRecords) {
+      refuseCeiling(dump.totalItems, maxRecords);
+    }
+  };
+
+  let progress;
+  try {
+    progress = asProgress(
+      await fetchGiftsAxis(`updated_from=${dump.since}`, {
+        startOffset: dump.offset,
+        maxRecords: allowance,
+        maxPages,
+        deadline,
+        onPage: bank,
+      }),
+      dump.offset);
+  } catch (err) {
+    // A walk that can never be allowed to finish is not worth resuming: the
+    // next request would spend its whole budget arriving at the same refusal.
+    if (err instanceof IncompleteRead && err.reason === "ceiling") _resetDump();
+    throw err;
+  }
+
+  // A bare-array fetcher never calls onPage, so its rows are banked here. The
+  // paged one has banked them already and re-banking is a no-op against the
+  // dedupe set.
+  bank(progress.items, progress.offset, progress.totalItems);
+  dump.complete = progress.complete;
+
+  if (!dump.complete) {
+    if (dump.totalItems !== null && dump.totalItems > maxRecords) {
+      // Not resumable: continuing a walk that can never be allowed to finish
+      // would spend the next request's budget to arrive at the same refusal.
+      const total = dump.totalItems;
+      _resetDump();
+      refuseCeiling(total, maxRecords);
+    }
+    if (progress.stoppedBy === "cap") {
+      // A fetcher that hands back a bare list has no offset to resume from, so
+      // there is nothing here worth keeping for the next request.
+      const rows = progress.items.length;
+      _resetDump();
+      throw new IncompleteRead("cap",
+        `a bare gift list of ${rows} rows is at or above the page cap`,
+        "the LGL result may have been truncated by the page cap, refusing to report a partial total");
+    }
+    console.warn(`[hub-exit] the LGL walk since ${dump.since} stopped at ${dump.offset} of ` +
+      `${dump.totalItems === null ? "an unknown number of" : dump.totalItems} records ` +
+      `(${progress.stoppedBy}) after ${Math.round((clock() - startedAt) / 1000)}s; ` +
+      "refusing this request and keeping the progress for the next one");
+    // One sentence for every way the walk can stop short, because all of them
+    // mean the same thing to the hub: this is not all the gifts. Which one it
+    // was goes in the log line above, where the person tuning the bounds will
+    // look for it.
+    throw new IncompleteRead(progress.stoppedBy,
+      `the walk since ${dump.since} reached ${dump.offset} records and did not finish`,
+      "the LGL read did not reach the end of the result set within one request, " +
+      "refusing to report a partial total. The next request resumes where this one stopped");
+  }
+
+  // The second axis, once per dump and only after the first one finished. It is
+  // merged ONLY when it came back complete: a partial second axis can only be a
+  // partial addition, and the first axis has already answered on its own terms.
+  if (!dump.probed) {
+    dump.probed = true;
+    try {
+      const other = asProgress(
+        await fetchGiftsAxis(`gift_date_from=${dump.since}`,
+          { startOffset: 0, maxRecords, maxPages, deadline }),
+        0);
+      if (other.complete) {
+        for (const g of other.items) {
+          const k = keyOf(g);
+          if (dump.keys.has(k)) continue;
+          dump.keys.add(k);
+          dump.gifts.push(g);
+        }
+      } else {
+        console.log(`[hub-exit] gift_date_from axis did not finish (${other.stoppedBy}), ignoring it`);
+      }
+    } catch (err) {
+      // Expected today. Logged at info because it is the known state of the LGL
+      // API, not a new fault, and updated_from already answered.
+      console.log(`[hub-exit] gift_date_from axis unavailable (${err && err.message}), using updated_from only`);
+    }
+  }
+
+  console.log(`[hub-exit] LGL walk since ${dump.since} complete: ${dump.gifts.length} gifts, ` +
+    `${dump.offset} records read in ${Math.round((clock() - startedAt) / 1000)}s`);
+  dump.at = clock();
+  return dump.gifts;
 }
 
+function refuseCeiling(total, maxRecords) {
+  throw new IncompleteRead("ceiling",
+    `LGL reports ${total === null ? "more than" : total} records for this query, ` +
+    `past the ${maxRecords} this exit will walk`,
+    "the LGL query covers more records than this exit will read in one go, " +
+    "refusing to report a partial total");
+}
 
 // ─── The route ───
 //
-// fetchGiftsAxis is server.js's fetchLGLApiGiftsAxis, passed in so this module
-// can be exercised without the LGL API and without a key. hasApiKey reports
-// whether LGL_API_KEY is set.
-export function hubMetricsHandler({ fetchGiftsAxis, hasApiKey }) {
+// fetchGiftsAxis is server.js's fetchLGLApiGiftsPaged, passed in so this module
+// can be exercised without the LGL API and without a key. It may also be a
+// fetcher that returns a bare list of gifts; see asProgress for what that costs.
+// hasApiKey reports whether LGL_API_KEY is set.
+// readOpts overrides the bounds above. Production passes nothing; the test
+// suite uses it to make a walk stop short on a page count rather than on a
+// stopwatch, because a test that depends on how fast a machine runs is a test
+// that fails on a Tuesday for no reason.
+export function hubMetricsHandler({ fetchGiftsAxis, hasApiKey, readOpts }) {
   return async function hubMetrics(req, res) {
     // Not configured is not the same as forbidden, and the status code alone
     // saying which side is wrong saves an afternoon.
@@ -309,8 +607,17 @@ export function hubMetricsHandler({ fetchGiftsAxis, hasApiKey }) {
 
     let raw;
     try {
-      raw = await fetchGiftsForRange(fetchGiftsAxis, from);
+      raw = await fetchGiftsForRange(fetchGiftsAxis, from, readOpts || {});
     } catch (err) {
+      // A read that did not reach the end of LGL's result set is the case this
+      // route exists to get right. Summing what did arrive would publish a
+      // giving figure short by an unknown amount, and a short total is
+      // indistinguishable from a quiet Sunday once it is a number on a
+      // dashboard. So it is refused, the same as any other failure, and the
+      // message says which kind it was so the next person is not guessing.
+      if (err instanceof IncompleteRead) {
+        return res.status(502).json({ error: err.publicMessage });
+      }
       // The upstream message is logged, not returned: it is LGL's text and this
       // payload is read by a machine.
       console.error(`[hub-exit] LGL read failed: ${err && err.message}`);
@@ -319,14 +626,6 @@ export function hubMetricsHandler({ fetchGiftsAxis, hasApiKey }) {
 
     if (!Array.isArray(raw)) {
       return res.status(502).json({ error: "LGL returned something that is not a list of gifts" });
-    }
-    if (raw.length >= PAGE_CAP_SUSPECT) {
-      // Truncated is indistinguishable from a quiet week once it is summed, so
-      // it is refused. Zeros and short totals are both claims about a Sunday.
-      console.warn(`[hub-exit] ${raw.length} gifts returned, at or above the page cap, refusing to report`);
-      return res.status(502).json({
-        error: "the LGL result may have been truncated by the page cap, refusing to report a partial total",
-      });
     }
 
     const summary = summarizeOffertory(raw, from, to);

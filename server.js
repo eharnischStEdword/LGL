@@ -12,6 +12,7 @@ import {
   OFFERTORY_FUND,
   PAGE_CAP_SUSPECT,
 } from "./hub-exit.js";
+import { fetchLGLApiGiftsAxis, fetchLGLApiGiftsPaged } from "./lgl-api.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -288,8 +289,6 @@ app.get("/api/lgl-all-funds", requireAuth, async (req, res) => {
 
 // ─── Hybrid API (permanent link + LGL API top-up) ───
 
-const LGL_API_BASE = "https://api.littlegreenlight.com/api/v1";
-
 // Parse XLSX or CSV buffer into array of row objects (mirrors client-side logic)
 function parseSpreadsheetServer(buffer, contentType) {
   let wb;
@@ -323,37 +322,12 @@ function detectColumnsServer(headers) {
   return { dateCol: findCol(datePatterns), amountCol: findCol(amountPatterns), fundCol: findCol(fundPatterns) };
 }
 
-// Fetch gifts from LGL API since a given date, optionally filtered by fund.
-// queryTerm is the LGL search term for one axis, e.g. "updated_from=2026-08-01".
-async function fetchLGLApiGiftsAxis(queryTerm) {
-  const gifts = [];
-  let offset = 0;
-  const limit = 100;
-  const maxPages = 50;
-
-  for (let page = 0; page < maxPages; page++) {
-    const params = new URLSearchParams();
-    params.append("q[]", queryTerm);
-    params.append("limit", String(limit));
-    params.append("offset", String(offset));
-
-    const url = `${LGL_API_BASE}/gifts/search.json?${params}`;
-    const resp = await fetch(url, {
-      headers: { Authorization: `Bearer ${LGL_API_KEY}` },
-    });
-    if (!resp.ok) {
-      const body = await resp.text();
-      throw new Error(`LGL API ${resp.status}: ${body.slice(0, 200)}`);
-    }
-    const data = await resp.json();
-    const items = data.items || [];
-    gifts.push(...items);
-
-    if (offset + items.length >= (data.total_items || 0)) break;
-    offset += limit;
-  }
-  return gifts;
-}
+// Fetching gifts from the LGL API lives in lgl-api.js now. fetchLGLApiGiftsAxis
+// is the same 50-page walk it has always been and every caller below is
+// unchanged; fetchLGLApiGiftsPaged is the walk that reports whether it reached
+// the end, which is what the hub exit needs and what the old one could not say.
+// They moved out of this file so the test suite can drive them against stubbed
+// HTTP without booting Express or holding an API key.
 
 // NOTE (axis mismatch — audit finding #11): `updated_from` selects gifts by
 // UPDATED-at date, but downstream consumers bucket by RECEIVED date. That
@@ -633,8 +607,13 @@ app.get("/api/lgl-plate-status", requireAuth, async (req, res) => {
 // so this route checks its own bearer token in constant time. Aggregates only:
 // no donor name, no email, no gift id, no address. See hub-exit.js and
 // docs/exit-contract.md in the st-edward-plt-dashboard repo.
+// The PAGED walk, not the 50-page one. A week in 2025 asks LGL for everything
+// touched since mid-2025 and that is far more than 50 pages, which is why this
+// exit refused every 2025 week and the hub holds no giving history to compare
+// against. hub-exit.js owns the budget, the ceiling and the refusal; this line
+// only decides which walk it drives.
 app.get("/api/hub/v1/metrics", hubMetricsHandler({
-  fetchGiftsAxis: fetchLGLApiGiftsAxis,
+  fetchGiftsAxis: fetchLGLApiGiftsPaged,
   hasApiKey: () => Boolean(LGL_API_KEY),
 }));
 

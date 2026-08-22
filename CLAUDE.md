@@ -28,6 +28,8 @@ Push to main branch. Render auto-deploys from GitHub.
   - v2 (staging, at /v2): src/v2/* — DashboardV2.jsx orchestrator; lib.js holds
     math copied VERBATIM from v1 plus the new weekly engine; historical.js is a
     verbatim copy of HISTORICAL_MONTHLY. src/App.jsx routes on pathname.
+- lgl-api.js: every call to the LGL gift search, so the paging can be tested
+  without booting Express or holding an API key
 - Node.js + Express backend in server.js
   - Proxies LGL permanent links (CORS)
   - Hybrid endpoint: parses Offertory XLSX server-side, merges LGL API gifts
@@ -106,9 +108,29 @@ implements the same contract in hub_exit.py; keep the two in step.
 - A gift with no payment type is counted in NEITHER figure and disclosed in the
   freshness signals (`unclassified`, `unclassified_cents`), so the plate can
   never quietly under-report.
-- Failure is silence, not a wrong number: an LGL read that fails, or one at the
-  page cap where the result may be truncated, returns a non-200 with an `error`.
+- Failure is silence, not a wrong number: an LGL read that fails, or one that
+  did not reach the end of LGL's result set, returns a non-200 with an `error`.
   It never returns zeros, because a zero is a claim that nothing was given.
+- Deep reads PAGE THROUGH (2026-08-21). LGL does not accept `gift_date_from`, so
+  the query is `updated_from`, which reaches back 45 days before the window and
+  drags in every record touched since. A week in 2025 is therefore about
+  thirteen months of gifts, far past the old 50-page walk, and the exit refused
+  every one of them: that is why the hub holds only recent weeks of giving and
+  the PLT dashboard's "vs a year ago" tile reads no match. hub-exit.js now walks
+  the whole result set, proving it reached the end against LGL's own
+  `total_items` rather than guessing from how much came back. Three bounds, all
+  of which REFUSE rather than truncate: `READ_BUDGET_MS` (60s, two thirds of the
+  hub's 90s client timeout), `MAX_RECORDS` (25,000) and `MAX_PAGES` (250). A walk
+  that runs out of budget keeps its progress, so the next request resumes at the
+  offset it stopped at instead of re-pulling thirteen months; a backfill issues
+  its weeks back to back, so a pull too big for one request finishes inside the
+  same run.
+- Paging and retry live in `lgl-api.js`: `fetchLGLApiGiftsAxis` is the original
+  50-page walk (hybrid, recent-gifts and the plate detector still use it,
+  unchanged) and `fetchLGLApiGiftsPaged` is the one that reports whether it
+  finished. Both retry a 429 or a 5xx with a short backoff, which is the first
+  rate-limit handling this repo has ever had. LGL's actual limits are NOT
+  verified; 429-with-Retry-After is an assumption written down in that file.
 - Aggregates only. No donor name, no email, no gift id, no address, ever.
 
 ## Historical Data
