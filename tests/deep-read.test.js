@@ -19,7 +19,9 @@ import assert from "node:assert/strict";
 import express from "express";
 
 import { hubMetricsHandler, MAX_RECORDS, _resetDump } from "../hub-exit.js";
-import { fetchLGLApiGiftsPaged, LGL_PAGE_SIZE } from "../lgl-api.js";
+import {
+  fetchLGLApiGiftsPaged, LGL_PAGE_SIZE, LGL_DEEP_PAGE_SIZE,
+} from "../lgl-api.js";
 
 const TOKEN = "test-hub-token-do-not-use-anywhere-real";
 const FROM = "2025-08-11";
@@ -126,7 +128,7 @@ test("a week in 2025 is paged through instead of refused", async () => {
   process.env.HUB_EXIT_TOKEN = TOKEN;
   const requests = [];
   const gifts = buildGifts();
-  const app = makeApp();
+  const app = makeApp({ pageSize: 100 });
 
   // globalThis.fetch is the stub for the OUTBOUND LGL call and for this test's
   // own inbound request, so the app is served inside the swap and the stub
@@ -169,7 +171,7 @@ test("a walk that stops short refuses, and the next request finishes it", async 
   const gifts = buildGifts();
   // Mutated between the two requests, which is how one app serves a bounded
   // walk and then an unbounded one.
-  const readOpts = { maxPages: 2 };
+  const readOpts = { maxPages: 2, pageSize: 100 };
   const app = makeApp(readOpts);
 
   const real = globalThis.fetch;
@@ -205,7 +207,7 @@ test("a query past the record ceiling is refused after one request, not after tw
   process.env.HUB_EXIT_TOKEN = TOKEN;
   const requests = [];
   const gifts = buildGifts();
-  const app = makeApp({ maxRecords: 250 });
+  const app = makeApp({ maxRecords: 250, pageSize: 100 });
 
   const real = globalThis.fetch;
   // LGL says the query has far more records than the ceiling allows. The walk
@@ -235,7 +237,7 @@ test("a gift served on two pages is counted once", async () => {
   const one = { id: 777, fund_name: "Offertory", received_date: "2025-08-13",
                 received_amount: 25.00, payment_type_name: "Cash" };
   const requests = [];
-  const app = makeApp();
+  const app = makeApp({ pageSize: 100 });
 
   const real = globalThis.fetch;
   const lgl = fakeLGL({
@@ -263,16 +265,81 @@ test("a gift served on two pages is counted once", async () => {
   }
 });
 
-test("the ceiling in the shipped configuration is above a full deep read", () => {
-  // 445 days is the deepest window this exit accepts, and CLAUDE.md records the
-  // historical import at about 63,000 gifts over 66 months, near 31 a day. If
-  // that ever stops being true the number to change is MAX_RECORDS, and this
-  // assertion is where the reasoning is written down rather than in a commit
-  // message nobody will find.
-  const deepestWindowDays = 445;
-  const giftsPerDayFromTheHistoricalImport = 63000 / (66 * 30.4);
-  assert.ok(MAX_RECORDS > deepestWindowDays * giftsPerDayFromTheHistoricalImport,
-    "the record ceiling is below a legitimate deep read");
+test("the ceiling in the shipped configuration is above the whole gift database", () => {
+  // THIS TEST USED TO PASS WHILE THE THING IT GUARDS WAS BROKEN, which is worth
+  // more than the assertion. It multiplied 445 days by the gift rate from the
+  // historical import, got about 14,000, and concluded that a ceiling of 25,000
+  // was comfortable. Meanwhile the 2026-08-22 backfill was refused on that
+  // ceiling for 65 of 79 weeks, out to a week whose query reached back only four
+  // months.
+  //
+  // The rate was never what mattered. `updated_from` selects on when a record
+  // was last TOUCHED, so one bulk edit inside LGL restamps everything it touches
+  // and every query reaching past that day returns all of it at once. There is
+  // no rate that predicts that, and the only honest bound is the size of the
+  // database: an updated_from query cannot return more rows than LGL holds.
+  const giftsInTheWholeDatabase = 63000;  // CLAUDE.md, the historical import
+  assert.ok(MAX_RECORDS > giftsInTheWholeDatabase,
+    "the ceiling must be above every gift LGL holds, because one bulk edit " +
+    "can make a single query ask for all of them");
+});
+
+test("the deep walk asks LGL for a page far bigger than the legacy 100", () => {
+  // A 100-row page measured 2.4 seconds against live LGL. The whole database is
+  // about 63,000 records, so at 100 a full-depth walk is over four hours of
+  // round trips and the 60-second budget can never converge on it. This is the
+  // number that makes a backfill finish, so a silent revert of it should fail
+  // here rather than be discovered by a cron that runs all morning.
+  assert.ok(LGL_DEEP_PAGE_SIZE >= 500,
+    `a deep page of ${LGL_DEEP_PAGE_SIZE} puts a full backfill back into hours`);
+  assert.equal(LGL_PAGE_SIZE, 100,
+    "the legacy walk advances its offset by the LIMIT, so its page size must " +
+    "not move: PAGE_CAP_SUSPECT is 50 pages of 100");
+});
+
+test("a server that quietly caps the page does not end the walk early", async () => {
+  // THE DANGEROUS ONE. Asking for 1,000 and being served 100 makes every page
+  // short. Judged against what was ASKED for, the first page looks like the end
+  // of the results and the walk reports a COMPLETE read of a tenth of them:
+  // a short total wearing the word "complete", which is the single failure this
+  // module exists to prevent.
+  const gifts = buildGifts();          // 450
+  const requests = [];
+  await withFakeLGL(fakeLGL({
+    gifts, requests,
+    pageOverride: (offset, limit) => gifts.slice(offset, offset + Math.min(limit, 100)),
+  }), async () => {
+    const result = await fetchLGLApiGiftsPaged("updated_from=2025-06-27",
+      { pageSize: 1000 });
+    assert.equal(result.complete, true);
+    assert.equal(result.offset, gifts.length, "every record, not just the first page");
+    assert.equal(result.served, 100, "the walk measured what it was actually given");
+    assert.ok(updatedFromCalls(requests).length >= 5,
+      "it kept paging at the size the server was willing to serve");
+  });
+});
+
+test("a page size LGL refuses drops to 100 and the walk still finishes", async () => {
+  let asked = [];
+  await withFakeLGL(async (url) => {
+    const u = new URL(String(url));
+    const limit = Number(u.searchParams.get("limit"));
+    const offset = Number(u.searchParams.get("offset"));
+    asked.push(limit);
+    if (limit > 100) {
+      return new Response("limit must be between 1 and 100", { status: 400 });
+    }
+    const gifts = buildGifts();
+    return Response.json({ items: gifts.slice(offset, offset + limit),
+                           total_items: gifts.length });
+  }, async () => {
+    const result = await fetchLGLApiGiftsPaged("updated_from=2025-06-27",
+      { pageSize: 1000 });
+    assert.equal(result.complete, true, "a refused page size must not lose the read");
+    assert.equal(result.offset, 450);
+    assert.equal(asked[0], 1000, "it tried the big page first");
+    assert.equal(asked[1], 100, "and dropped straight to the size that works");
+  });
 });
 
 // ─── The paging loop on its own ───
@@ -282,7 +349,7 @@ test("the wall clock stops the walk, and says so rather than lying about it", as
   const requests = [];
   await withFakeLGL(fakeLGL({ gifts, requests, delayMs: 8 }), async () => {
     const result = await fetchLGLApiGiftsPaged("updated_from=2025-06-27",
-      { deadline: Date.now() + 20 });
+      { deadline: Date.now() + 20, pageSize: 100 });
     assert.equal(result.complete, false, "an unfinished walk must not claim to be finished");
     assert.equal(result.stoppedBy, "budget");
     assert.ok(result.pages >= 1 && result.pages < 5,
@@ -394,7 +461,7 @@ test("a thirteen week backfill of 2025 makes one walk and answers every week", a
   });
 
   const requests = [];
-  const app = makeApp();
+  const app = makeApp({ pageSize: 100 });
   const real = globalThis.fetch;
   const lgl = fakeLGL({ gifts, requests });
   globalThis.fetch = (url, init) =>

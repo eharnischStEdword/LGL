@@ -291,20 +291,32 @@ export const READ_BUDGET_MS = 60 * 1000;
 // malformed request cannot become an unbounded loop against somebody else's
 // API.
 //
-// Where 25,000 comes from. The deepest window this exit will accept is
-// MAX_RANGE_DAYS plus ENTRY_LOOKBACK_DAYS, 445 days. The LGL historical import
-// recorded in CLAUDE.md is about 63,000 gifts across all funds over the 66
-// months from July 2019 to December 2024, which is about 31 gifts a day, so 445
-// days is on the order of 14,000 records. 25,000 is a shade under twice that.
-// The headroom is for growth since that import ended rather than for roundness.
-// ASSUMPTION, and it is the weak point of this number: nothing in this repo
-// measures the CURRENT all-funds record rate, so this rests on the 2019-2024
-// rate not having more than doubled.
+// WHERE 25,000 CAME FROM, AND WHY IT WAS WRONG. It was derived from a rate: the
+// LGL historical import recorded in CLAUDE.md is about 63,000 gifts over the 66
+// months to December 2024, near 31 a day, so the deepest window this exit
+// accepts (MAX_RANGE_DAYS plus ENTRY_LOOKBACK_DAYS, 445 days) was reckoned at
+// about 14,000 records and 25,000 was called comfortable headroom. The comment
+// even named its own weak point: nothing measured the current rate.
 //
-// Being wrong about it is cheap in the safe direction. LGL reports total_items
-// on the first page, so a query bigger than the ceiling is refused after ONE
-// request rather than after 250, and it is refused rather than truncated.
-export const MAX_RECORDS = 25000;
+// The rate was never the thing that mattered. `updated_from` selects on when a
+// record was last TOUCHED, so a single bulk operation inside LGL restamps
+// however many records it touches and every query reaching back past that day
+// returns all of them at once. The 2026-08-22 backfill is the measurement: 65
+// of 79 weeks were refused on this ceiling, and not just the deep ones. The
+// newest refusal was 2026-W21, so a query with `updated_from` in April 2026 was
+// already reporting more than 25,000 records, against a daily run three months
+// later that walked 1,750. No gift rate explains that. A bulk edit does.
+//
+// SO THE CEILING IS SIZED AGAINST THE DATABASE NOW, NOT AGAINST A RATE. An
+// `updated_from` query cannot return more rows than LGL holds, and LGL holds on
+// the order of 63,000 gifts. 75,000 is above that with room to grow, and a
+// query claiming more than that is not a big backfill: it is this code being
+// wrong about what it is talking to, which is what a ceiling should catch.
+//
+// Being wrong is still cheap in the safe direction. LGL reports total_items on
+// the first page, so a query past the ceiling is refused after ONE request
+// rather than after 250, and it is refused rather than truncated.
+export const MAX_RECORDS = 75000;
 
 // THREE. The same ceiling counted in requests, for the day LGL stops sending
 // total_items and the walk cannot see how far it has to go. 250 pages is
@@ -423,6 +435,10 @@ async function walkForRange(fetchGiftsAxis, from, opts = {}) {
     budgetMs = READ_BUDGET_MS,
     maxRecords = MAX_RECORDS,
     maxPages = MAX_PAGES,
+    // Left undefined in production so lgl-api.js owns the number. The suite
+    // sets it, because a test that has to know the shipped page size to count
+    // pages breaks every time that number is tuned.
+    pageSize,
   } = opts || {};
 
   const since = new Date(`${from}T00:00:00Z`);
@@ -488,6 +504,7 @@ async function walkForRange(fetchGiftsAxis, from, opts = {}) {
         maxPages,
         deadline,
         onPage: bank,
+        ...(pageSize ? { pageSize } : {}),
       }),
       dump.offset);
   } catch (err) {
@@ -542,7 +559,8 @@ async function walkForRange(fetchGiftsAxis, from, opts = {}) {
     try {
       const other = asProgress(
         await fetchGiftsAxis(`gift_date_from=${dump.since}`,
-          { startOffset: 0, maxRecords, maxPages, deadline }),
+          { startOffset: 0, maxRecords, maxPages, deadline,
+            ...(pageSize ? { pageSize } : {}) }),
         0);
       if (other.complete) {
         for (const g of other.items) {
@@ -568,6 +586,15 @@ async function walkForRange(fetchGiftsAxis, from, opts = {}) {
 }
 
 function refuseCeiling(total, maxRecords) {
+  // SAID OUT LOUD, because for one morning it was not. This is the only refusal
+  // in the module that used to log nothing: the route turns an IncompleteRead
+  // into a 502 carrying the public sentence and never writes the number down,
+  // so 65 refused weeks left no trace on this service at all and the count that
+  // caused them had to be inferred from the hub's side. A refusal that cannot
+  // say what it refused is most of the way to a silent failure.
+  console.error(`[hub-exit] refusing: LGL reports ` +
+    `${total === null ? "more than" : total} records for this query, past the ` +
+    `${maxRecords} this exit will walk in one dump`);
   throw new IncompleteRead("ceiling",
     `LGL reports ${total === null ? "more than" : total} records for this query, ` +
     `past the ${maxRecords} this exit will walk`,

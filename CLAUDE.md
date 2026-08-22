@@ -122,6 +122,31 @@ implements the same contract in hub_exit.py; keep the two in step.
 - Failure is silence, not a wrong number: an LGL read that fails, or one that
   did not reach the end of LGL's result set, returns a non-200 with an `error`.
   It never returns zeros, because a zero is a claim that nothing was given.
+- THE 2026-08-22 BACKFILL REFUSED 65 OF 79 WEEKS, and the ceiling was why. It
+  was sized from a gift RATE (63,000 gifts over 66 months, near 31 a day, so a
+  445-day window was reckoned at 14,000 records and 25,000 called comfortable).
+  The rate was never what mattered: `updated_from` selects on when a record was
+  last TOUCHED, so one bulk edit inside LGL restamps everything it touches and
+  every query reaching past that day returns all of it. A week whose query
+  reached back only four months was already over 25,000. MAX_RECORDS is 75,000
+  now, sized against the whole database rather than a rate, because an
+  updated_from query cannot return more rows than LGL holds. The refusal also
+  LOGS now: it was the one refusal in hub-exit.js that said nothing, so those 65
+  weeks left no trace on this service at all.
+- THE DEEP WALK ASKS FOR 1,000 ROWS A PAGE (`LGL_DEEP_PAGE_SIZE`), and the
+  legacy `fetchLGLApiGiftsAxis` still asks for 100 and must keep doing so: it
+  advances its offset by the LIMIT rather than by what came back, and
+  PAGE_CAP_SUSPECT is "50 pages of 100". A 100-row page measured 2.4 seconds
+  against live LGL (1,750 records in 42 seconds), which is almost all round
+  trip, so a full-depth walk at 100 is over four hours and the 60-second budget
+  could never converge on it. LGL's maximum page size is NOT documented anywhere
+  this repo can reach, so the walk is written to survive being wrong both ways:
+  a page smaller than requested is measured rather than assumed (a short page
+  only ends the walk when LGL has stopped sending a total, and it is compared
+  against what was SERVED, never against what was asked for, or a server-side
+  cap would read as the end and publish a tenth of the results as complete), and
+  a limit LGL refuses IN WORDS THAT SAY "limit" drops to 100 for that walk. Any
+  other rejection is still asked exactly once.
 - Deep reads PAGE THROUGH (2026-08-21). LGL does not accept `gift_date_from`, so
   the query is `updated_from`, which reaches back 45 days before the window and
   drags in every record touched since. A week in 2025 is therefore about

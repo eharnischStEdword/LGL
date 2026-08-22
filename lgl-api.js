@@ -11,10 +11,27 @@
 
 export const LGL_API_BASE = "https://api.littlegreenlight.com/api/v1";
 
-// 100 rows is what this repo has always asked LGL for. It is NOT known to be
-// the maximum: nothing here has ever tried a larger page, so raising it is a
-// live experiment rather than a tuning knob.
+// 100 rows is what this repo has always asked LGL for, and the legacy walk at
+// the bottom of this file still does, because `fetchLGLApiGiftsAxis` advances
+// its offset by the LIMIT rather than by what came back, and PAGE_CAP_SUSPECT
+// in hub-exit.js is "50 pages of 100". Changing this number would silently skip
+// records there.
 export const LGL_PAGE_SIZE = 100;
+
+// The deep walk asks for more, and it is the reason a backfill is minutes
+// rather than hours. A 100-row page measured 2.4 seconds against live LGL on
+// 2026-08-22 (1,750 records in 42 seconds, from the hub-exit log line), which is
+// almost entirely round trip rather than rows. The whole gift database is about
+// 63,000 records, so at 100 a full-depth walk is over four hours of waiting for
+// HTTP, and the 60-second budget per request could never converge on it.
+//
+// LGL's maximum page size is NOT documented anywhere this repo can reach, so
+// this is a request rather than a fact, and the walk is written so that being
+// wrong about it is harmless in BOTH directions. If LGL quietly serves fewer
+// rows than asked for, the walk measures what it actually got and keeps going.
+// If LGL refuses the limit outright, the first page is retried at 100 and the
+// walk behaves exactly as it did before.
+export const LGL_DEEP_PAGE_SIZE = 1000;
 
 // ─── Rate limits: an assumption, not a fact ───
 //
@@ -45,10 +62,11 @@ function apiKey() {
 // One page. Returns the rows and LGL's own count of how many rows the whole
 // query has, which is the only thing that lets a caller prove it reached the
 // end rather than guess from how much came back.
-export async function fetchLGLGiftPage(queryTerm, offset, deadline = null) {
+export async function fetchLGLGiftPage(queryTerm, offset, deadline = null,
+                                      limit = LGL_PAGE_SIZE) {
   const params = new URLSearchParams();
   params.append("q[]", queryTerm);
-  params.append("limit", String(LGL_PAGE_SIZE));
+  params.append("limit", String(limit));
   params.append("offset", String(offset));
   const url = `${LGL_API_BASE}/gifts/search.json?${params}`;
 
@@ -105,37 +123,73 @@ export async function fetchLGLApiGiftsPaged(queryTerm, opts = {}) {
     maxPages = Infinity,
     deadline = null,
     onPage = null,
+    pageSize = LGL_DEEP_PAGE_SIZE,
   } = opts || {};
 
   let offset = startOffset;
   let totalItems = null;
   let pages = 0;
   let stoppedBy = "end";
+  let limit = pageSize;
+  // What LGL ACTUALLY hands back for a full page, learned from the first one.
+  // Not the same thing as what was asked for, and the difference is the whole
+  // reason this variable exists. See the short-page rule below.
+  let served = null;
 
   for (;;) {
     if (pages >= maxPages) { stoppedBy = "pages"; break; }
     if (offset - startOffset >= maxRecords) { stoppedBy = "records"; break; }
     if (deadline !== null && Date.now() >= deadline) { stoppedBy = "budget"; break; }
 
-    const page = await fetchLGLGiftPage(queryTerm, offset, deadline);
+    let page;
+    try {
+      page = await fetchLGLGiftPage(queryTerm, offset, deadline, limit);
+    } catch (err) {
+      // ONE retry, and only with positive evidence that the PAGE SIZE is what
+      // was refused. "A rejected query must not be asked again" is an invariant
+      // of this file with its own test: a 400 will not become a 200 on the
+      // second ask, and re-asking is how a typo turns into hammering somebody
+      // else's API. A larger page is a different request rather than the same
+      // one, but only if the rejection was actually about the limit, so that
+      // has to be read out of the message rather than assumed from the timing.
+      //
+      // ASSUMPTION: that LGL says "limit" when it refuses one. If it refuses a
+      // page of a thousand in words that do not, this throws instead, the read
+      // fails, and the cron goes red and says so. That is the loud direction.
+      const aboutTheLimit = /\blimit\b/i.test(err && err.message);
+      if (pages > 0 || limit === LGL_PAGE_SIZE || !aboutTheLimit) throw err;
+      console.warn(`[lgl-api] LGL refused a page of ${limit} (${err.message}), ` +
+                   `falling back to ${LGL_PAGE_SIZE} for this walk`);
+      limit = LGL_PAGE_SIZE;
+      page = await fetchLGLGiftPage(queryTerm, offset, deadline, limit);
+    }
     pages += 1;
     if (page.totalItems !== null) totalItems = page.totalItems;
     offset += page.items.length;
+    if (served === null && page.items.length > 0) served = page.items.length;
     if (onPage) onPage(page.items, offset, totalItems);
 
     // THE END, PROVED THREE WAYS, in the order they can be trusted.
     //
-    // LGL's own total is the honest one. A short page is the ordinary fallback
-    // for the day LGL stops sending total_items. An empty page is the backstop
-    // that stops this loop spinning if the other two ever disagree with
-    // reality: without it, an API that answered zero rows forever at a live
-    // offset would page until the ceiling.
+    // LGL's own total is the honest one. An empty page is the backstop that
+    // stops this loop spinning if the others ever disagree with reality:
+    // without it, an API answering zero rows forever at a live offset would
+    // page until the ceiling.
+    //
+    // A SHORT PAGE IS THE DANGEROUS ONE, and it is the last resort now rather
+    // than a peer of the other two. It is consulted only when LGL has stopped
+    // sending a total, and it is measured against what LGL actually SERVED
+    // rather than against what was asked for. Measured against the request, a
+    // server that silently caps pages at 100 while being asked for 1,000 makes
+    // every page short, so the walk would stop after the first one and report a
+    // COMPLETE read of a hundredth of the result set. That is the exact failure
+    // this module exists to prevent, arriving through the door marked "the end".
     if (page.items.length === 0) break;
     if (totalItems !== null && offset >= totalItems) break;
-    if (page.items.length < LGL_PAGE_SIZE) break;
+    if (totalItems === null && served !== null && page.items.length < served) break;
   }
 
-  return { complete: stoppedBy === "end", offset, totalItems, pages, stoppedBy };
+  return { complete: stoppedBy === "end", offset, totalItems, pages, stoppedBy, served };
 }
 
 // ─── The original walk, unchanged on purpose ───
