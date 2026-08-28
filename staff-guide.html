@@ -49,7 +49,7 @@
 
 <header>
   <h1>Fund Giving Dashboard</h1>
-  <div class="sub">St. Edward Church and School &middot; Staff guide &middot; Updated August 12, 2026 &middot; Owner: Eric Harnisch, <a href="mailto:eharnisch@stedward.org">eharnisch@stedward.org</a></div>
+  <div class="sub">St. Edward Church and School &middot; Staff guide &middot; Updated August 28, 2026 &middot; Owner: Eric Harnisch, <a href="mailto:eharnisch@stedward.org">eharnisch@stedward.org</a></div>
 </header>
 
 <div class="card">
@@ -80,6 +80,7 @@
     <li><b>Online gifts (Pushpay credit card)</b> flow into LGL live and show up the same day.</li>
     <li><b>Cash and checks</b> are counted by the money counters on Wednesday, then entered, so they are usually in LGL by Thursday. That schedule is a plan, and it can slip.</li>
     <li><b>Bulk imports</b> are run by hand, normally Monday and Thursday. The top bar shows the date of the most recent import, and a "+N recent" note when live gifts arrived after it.</li>
+    <li><b>Every Pushpay export takes the last 30 days.</b> Not "since the last one". Pushpay's Transaction Period filter selects on the date a gift was RECEIVED, and that report offers no filter for when a record was created, so a Sunday collection typed in three or four days late falls between two exports and is never offered again. Measured entry lag runs 0, 3, 4, 10, 12 and 18 days, so a window under about three weeks can still drop a whole batch. The overlap costs nothing: Transaction ID maps to External gift ID and LGL matches on it, so a re-exported gift updates instead of duplicating. That mapping is load-bearing and must never drop out of a saved template.</li>
   </ul>
   <p class="note">Because of this rhythm, the newest week shows as <span class="pill gold">Counting</span> (striped gold) until its cash and check count has actually been entered in LGL. The dashboard checks for the count itself; if the count runs late, the week simply stays in Counting. A Counting week is left out of averages and comparisons on purpose, so a half-counted Sunday never reads as a bad week.</p>
 </div>
@@ -89,7 +90,7 @@
   <ul>
     <li><b>Signed in but told you are not authorized:</b> your email must be added to the allow-list; ask Eric to add you (ALLOWED_DASHBOARD_USERS in Render).</li>
     <li><b>A new fund is missing:</b> create it in LGL, then add it to the FULL GIVING REPORT scheduled export inside LGL, or it will never appear on the dashboard.</li>
-    <li><b>Numbers look a touch behind:</b> data is a scheduled export plus a live top-up; a back-dated gift can lag until the next export. Known and accepted.</li>
+    <li><b>Numbers look a touch behind:</b> this is about the dashboard reading LGL, and nothing else. The dashboard runs on a scheduled export plus a live top-up, so a gift back-dated inside LGL can lag until the next export catches it. Known and accepted. It does NOT describe the Pushpay export above, where a back-dated gift is not late, it is missed for good.</li>
     <li><b>The newest week looks low:</b> check its label first. If it says Counting, the cash and check count has not been entered yet; the number is online gifts so far.</li>
     <li><b>Everyone got signed out:</b> normal after a deploy or restart; sessions are in memory. Sign back in.</li>
     <li><b>Year-over-Year labels look wrong in the Classic view:</b> known deferred bug (it hardcodes 2025 and 2026, so labels drift after July 2026). The new view's Compare Years computes its years correctly.</li>
