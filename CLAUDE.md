@@ -169,6 +169,73 @@ implements the same contract in hub_exit.py; keep the two in step.
   verified; 429-with-Retry-After is an assumption written down in that file.
 - Aggregates only. No donor name, no email, no gift id, no address, ever.
 
+## Offertory gifts that never arrive (found 2026-08-28, from the PLT hub)
+
+**What was measured.** Eric exported 17,297 Pushpay transactions covering
+1 January 2025 to 28 August 2026, and the PLT hub was reconciled against them
+weekend by weekend. Eleven of thirteen weekends in the sample quarter match TO
+THE CENT, and the online figure matched on all thirteen, so the read path in
+`hub-exit.js` is sound and its plate/online split is not in question.
+
+**The finding.** Six weekends in 2026 hold basket money in Pushpay that never
+reached Little Green Light at all: 11 January, 18 January, 1 February, 24 May,
+31 May and 2 August, $45,923.61 in total. This is not a read problem on our
+side; those gifts are simply not in LGL, months later. The batches that go
+missing are, every time, the ones **entered three or four days after the Sunday
+they are dated to**, while the same weekend's *same-day* mail batch comes
+through normally. That is the signature of an import keyed on the date a gift is
+dated rather than the date it was entered: anything backdated into a window that
+has already been imported is never picked up again. The fix for the money is
+upstream, in whatever moves Pushpay into LGL.
+
+**WHY THIS MATTERS TO `plate-status.js` SPECIFICALLY, AND IT IS THE REASON THIS
+NOTE IS HERE.** `detectPlate` answers `plateLanded` with `.some()`: one gift of
+a plate payment type anywhere in the week is enough. On exactly these weekends
+the Sunday basket is absent and the week's few same-day mail cheques are
+present, and those *are* cash and cheque. So the detector says the count landed.
+Run against what LGL actually held for the week ending 24 May 2026:
+
+```
+{"plateLanded":true,"giftCount":3,"types":["Check","Cash"]}
+```
+
+Three mail cheques marked the week complete while $9,197.70 of basket was
+missing. A healthy week for comparison returns the same `plateLanded: true` with
+a `giftCount` in the eighties. The detector is doing what it was written to do;
+the evidence it accepts is just weaker than the claim it makes, and this is the
+one module whose entire job is to say whether the count is in.
+
+**The discriminator is already in the response and is not used: `giftCount`.**
+A real Sunday basket is 75 to 100 gifts. A broken week carries a handful. The
+PLT hub now acts on exactly this signal (`periods.short_reads`), asking two
+questions of a weekend against the median of its eight nearest neighbours: is
+the money below 35% of theirs, and is the gift count below 85% of theirs. Both
+are required, because neither alone separates the cases: in eighteen months of
+production 132 gifts is a broken weekend and 128 is a healthy one. Fitted
+against all eighty weekends it catches the nine known bad and accuses none of
+the other seventy-one.
+
+**NOT CHANGED HERE, AND DELIBERATELY.** Tightening `detectPlate` changes what
+the parish's fund dashboard marks complete, so it is Eric's call and not a
+tidy-up. The shape it would take: `plateLanded` should require plate evidence
+that looks like a basket rather than like three envelopes, and a week with plate
+money too thin to be a collection should answer `null` (cannot tell, fall back
+to the calendar) rather than `true`. `null` is already the module's honest
+answer for weak evidence and the client already handles it, so this needs no
+client change.
+
+**Two more weekends are wrong for other reasons and neither is fixable here.**
+25 January 2026 has no Sunday basket batch anywhere in the Pushpay export, so
+that deposit was never entered at source. Before 27 April 2025 the basket was
+entered on the Wednesday it was counted and dated to that Wednesday, often in
+irregular multi-week lumps, so February to April 2025 weekends read empty with
+the following week inflated. That is a historical practice, not a fault, but
+those weeks must never be compared.
+
+**Also seen, not chased.** The week ending 15 March 2026 runs the other way:
+LGL holds $1,175.00 more and 239 gifts against the export's 171, so there is
+giving in LGL that the Pushpay export does not carry.
+
 ## Historical Data
 - HISTORICAL_MONTHLY constant in Dashboard.jsx contains pre-aggregated monthly gift
   totals from the PDS/Pushpay import (Jul 2019 – Dec 2024, 42 funds, ~978 entries)
