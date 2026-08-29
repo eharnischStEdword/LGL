@@ -82,6 +82,15 @@ const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov
 const FY_START_MONTH = 7; // July
 const DATA_FLOOR = new Date(2019, 6, 1); // July 1, 2019 — start of historical data
 
+// The two calendar years the Year over Year view compares: this one and the one
+// before it, read off the clock. They were the literals 2025 and 2026, written
+// in a year where those two happened to be right, so on 1 January 2027 this view
+// would have gone on drawing 2025 against 2026, labelling the legend 2025 and
+// 2026, and calling it year over year. Nothing would have failed and the chart
+// would have looked correct.
+const YOY_CURRENT = new Date().getFullYear();
+const YOY_PRIOR = YOY_CURRENT - 1;
+
 // Proxied through our server to avoid CORS issues
 const LGL_OFFERTORY_ENDPOINT = "/api/lgl-data-hybrid";
 const LGL_ALL_FUNDS_ENDPOINT = "/api/lgl-all-funds"; // stays on old endpoint (too large for server-side parsing)
@@ -701,11 +710,11 @@ export default function Dashboard() {
     return { rows, grand, label };
   }, [giftIndex, funds, timeRange, loaded]);
 
-  // ─── YoY comparison data (calendar year: 2025 vs 2026) ───
+  // ─── YoY comparison data (calendar year: last year vs this one) ───
   const yoyData = useMemo(() => {
     if (!loaded || rawGifts.length === 0 || timeRange !== "yoy") return [];
     const now = new Date();
-    const calYears = [2025, 2026];
+    const calYears = [YOY_PRIOR, YOY_CURRENT];
     const currentMonth = now.getMonth(); // 0-11
 
     const rows = MONTHS.map((label, monthIdx) => {
@@ -728,8 +737,8 @@ export default function Dashboard() {
     if (timeRange !== "yoy") return [];
     const keys = [];
     for (const fund of [...selectedFunds].sort()) {
-      keys.push(`${fund} (2025)`);
-      keys.push(`${fund} (2026)`);
+      keys.push(`${fund} (${YOY_PRIOR})`);
+      keys.push(`${fund} (${YOY_CURRENT})`);
     }
     return keys;
   }, [selectedFunds, timeRange]);
@@ -942,12 +951,12 @@ export default function Dashboard() {
   const fundColorMap = {};
   funds.forEach((f, i) => { fundColorMap[f] = FUND_COLORS[i % FUND_COLORS.length]; });
 
-  // YoY colors — 2025 dashed, 2026 solid
+  // YoY colors — the earlier year dashed, this one solid
   const yoyColorMap = {};
   for (const fund of funds) {
     const base = fundColorMap[fund];
-    yoyColorMap[`${fund} (2025)`] = base;
-    yoyColorMap[`${fund} (2026)`] = base;
+    yoyColorMap[`${fund} (${YOY_PRIOR})`] = base;
+    yoyColorMap[`${fund} (${YOY_CURRENT})`] = base;
   }
 
   // FY Compare colors — oldest gray, middle base, current base
@@ -1516,16 +1525,16 @@ export default function Dashboard() {
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
                   {yoySeriesKeys.map(key => {
-                    const is2025 = key.includes("(2025)");
-                    const LabelComp = is2025 ? LabelUp : LabelDown;
+                    const isPrior = key.includes(`(${YOY_PRIOR})`);
+                    const LabelComp = isPrior ? LabelUp : LabelDown;
                     return (
                       <Line
                         key={key}
                         type="monotone"
                         dataKey={key}
                         stroke={yoyColorMap[key]}
-                        strokeWidth={is2025 ? 2 : 2.5}
-                        strokeDasharray={is2025 ? "6 3" : undefined}
+                        strokeWidth={isPrior ? 2 : 2.5}
+                        strokeDasharray={isPrior ? "6 3" : undefined}
                         dot={{ r: 3, fill: yoyColorMap[key] }}
                         activeDot={{ r: 5 }}
                       >
@@ -1542,7 +1551,7 @@ export default function Dashboard() {
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 16, fontFamily: sans }} />
                   {yoySeriesKeys.map(key => (
-                    <Bar key={key} dataKey={key} fill={yoyColorMap[key]} radius={[3, 3, 0, 0]} opacity={key.includes("(2025)") ? 0.5 : 0.88}>
+                    <Bar key={key} dataKey={key} fill={yoyColorMap[key]} radius={[3, 3, 0, 0]} opacity={key.includes(`(${YOY_PRIOR})`) ? 0.5 : 0.88}>
                       <LabelList content={<DataLabel />} />
                     </Bar>
                   ))}
