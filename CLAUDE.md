@@ -76,13 +76,25 @@ Push to main branch. Render auto-deploys from GitHub.
   money is USUALLY in LGL by Thursday; Eric's manual export-imports are
   PLANNED for Monday and Thursday but are manual and can slip — never
   hard-code that schedule (Eric, 2026-08-11: "you're being too rigid").
-- Evidence-based completeness (v1.3.0, REPAIRED 2026-08-22): /api/lgl-plate-status
-  asks the LGL API whether any OFFERTORY gift in the newest ended week carries a
-  check/cash payment_type_name. true → week completes from WEDNESDAY (count day);
-  false → stays "counting" past Thursday until the count actually lands;
-  null (no key, API error, no payment-type fields, or a read that could not be
-  proved complete) → calendar fallback: complete from THURSDAY after the ending
-  Sunday. Older weeks are always calendar.
+  2026-09-03 (Eric): TODAY the collection reaches Pushpay only after it has
+  gone through the ledger, and Barb is to begin keying it at count time
+  "soon-ish"; "in LGL by Thursday" describes that FUTURE process. Measured:
+  the 23 August batch reached LGL between Thursday 27 and Friday 28; the 30
+  August batch was not in LGL on Thursday 3 September. The on-screen wording
+  ("cash & checks usually land by Thursday" in the masthead, answer band,
+  Recent Weeks footer and staff guide) and the Thursday calendar fallback in
+  lib.js are what depend on this. Re-verify them after her change has run a
+  few weeks; nothing in the code needs to change for the timing itself.
+- Evidence-based completeness (v1.3.0, REPAIRED 2026-08-22, TIGHTENED 2026-09-03
+  in v1.9.0): /api/lgl-plate-status counts the OFFERTORY gifts in the newest
+  ended week that carry a check/cash payment_type_name and asks whether there
+  are enough to be a basket (`PLATE_BASKET_FLOOR`, 20). true → week completes
+  from WEDNESDAY (count day); false (fewer than the floor, INCLUDING a handful
+  of mail cheques, which used to count as the basket) → stays "counting" past
+  Thursday until the count actually lands; null (no key, API error, no
+  payment-type fields, or a read that could not be proved complete) → calendar
+  fallback: complete from THURSDAY after the ending Sunday. Older weeks are
+  always calendar. The response carries `plateCount` beside `giftCount`.
 - IT WAS DEAD FROM 2026-08-17 TO 2026-08-22 AND NOTHING SAID SO. The detector
   queried `gift_date_from`, which LGL rejects with 400 Unknown query parameter,
   and the route's catch turned every rejection into null, so v2 silently ran on
@@ -93,12 +105,15 @@ Push to main branch. Render auto-deploys from GitHub.
   updated_from. Two behaviour changes went in with it: the count is Offertory
   only (a cash gift to another fund used to say the plate had landed), and a
   read that did not finish answers null rather than false.
-- STILL UNVERIFIED ON LIVE: the payment_type_name values St. Edward actually
-  uses — the endpoint returns a `types` array and logs `[plate]` lines on
-  Render; check once after deploy that plate weeks show types matching
-  /check|cash/i, and update the regex if the parish uses different names. (The
-  gift report/CSV paths still expose no payment type; only this server-side API
-  check sees it.)
+- VERIFIED ON LIVE 2026-09-03, from the `[plate]` lines in Render's logs: the
+  payment_type_name values St. Edward uses are Check, Cash, ACH, and
+  "Card - VISA / MasterCard / Amex / Discover" with "(Apple Pay)" variants.
+  /check|cash/i matches exactly the two basket types and none of the online
+  ones. Seen the same day: week ending 2026-08-23 answered plateLanded=true on
+  Friday 28 August (172 gifts); week ending 2026-08-30 answered false through
+  Thursday 3 September (79 gifts, all online), so that basket was NOT in LGL by
+  Thursday. (The gift report/CSV paths still expose no payment type; only this
+  server-side API check sees it.)
 - 5-minute server-side cache on hybrid/recent endpoints
 
 ## PLT hub exit (added 2026-08-20)
@@ -233,14 +248,24 @@ production 132 gifts is a broken weekend and 128 is a healthy one. Fitted
 against all eighty weekends it catches the nine known bad and accuses none of
 the other seventy-one.
 
-**NOT CHANGED HERE, AND DELIBERATELY.** Tightening `detectPlate` changes what
-the parish's fund dashboard marks complete, so it is Eric's call and not a
-tidy-up. The shape it would take: `plateLanded` should require plate evidence
-that looks like a basket rather than like three envelopes, and a week with plate
-money too thin to be a collection should answer `null` (cannot tell, fall back
-to the calendar) rather than `true`. `null` is already the module's honest
-answer for weak evidence and the client already handles it, so this needs no
-client change.
+**CHANGED 2026-09-03 (v1.9.0, Eric's call), after a second live example.** The
+week of 17 to 23 August 2026 held five cheques dated Thursday 20 August, in LGL
+by the Monday, and a 96-gift Sunday batch that reached LGL four days after the
+weekend; the counters' sheet matched that Sunday batch to $50.00 (see
+ALERT-2026-09-03-plate-is-not-the-count.md). Under "any plate gift" the five
+cheques called the count landed from Monday. `detectPlate` now requires
+`PLATE_BASKET_FLOOR` (20) plate gifts in the week for `plateLanded: true`;
+fewer, mail included, answers `false` (the count is not in), and a week with
+no typed gifts still answers `null`. False rather than null for the thin case
+because the calendar fallback is wrong most weeks under today's timing (the 30
+August basket was not in LGL on Thursday 3 September). The 24 May example
+above now answers false. The client needed no change: it already holds a false
+week as "Counting" and says "still waiting on the count" after Thursday. Cost:
+a weekend whose Offertory basket is genuinely tiny (Christmas and Easter are
+their own Pushpay tally, hub D88) reads "waiting on the count" until the next
+Sunday ends and the calendar takes over. The floor is a judgement from one
+measured week plus the hub's 75-to-100 range; recheck it after Barb keys the
+collection at count time.
 
 **Two more weekends are wrong for other reasons and neither is fixable here.**
 25 January 2026 has no Sunday basket batch anywhere in the Pushpay export, so

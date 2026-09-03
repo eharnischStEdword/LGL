@@ -3,10 +3,11 @@
 // The v2 dashboard marks a week complete from the Thursday after its Sunday,
 // because Eric's export-imports are PLANNED for Mon/Thu and a plan is not a
 // guarantee. This detector is the EVIDENCE that beats that calendar rule: it
-// asks LGL whether any Offertory gift in the week carries a plate payment type
-// (cash or check). true = the count is in. false = no plate money for that week
-// yet. null = cannot tell, and the client falls back to the calendar, so this
-// can never make things worse than the rule it replaces.
+// counts the Offertory gifts in the week that carry a plate payment type (cash
+// or check) and asks whether there are enough of them to be a basket. true =
+// the count is in. false = the basket is not in LGL yet, whatever else is.
+// null = cannot tell, and the client falls back to the calendar, so this can
+// never make things worse than the rule it replaces.
 //
 // WHY THIS MODULE EXISTS. The detector was fifty lines inside a route in
 // server.js, and it asked LGL for `gift_date_from`, a parameter LGL does not
@@ -63,6 +64,27 @@ export function weekWindow(weekParam, now = new Date()) {
 // A week whose Offertory gifts all arrived with NO payment type answers null
 // rather than false: LGL is not telling us what kind of money it was, and
 // "no plate yet" is a claim we cannot make from that.
+//
+// HOW MANY PLATE GIFTS MAKE A BASKET. Until 2026-09-03 the answer was one, and
+// one is what the mail brings. The week of 17 to 23 August 2026 held five
+// cheques dated Thursday 20 August and 96 cash and cheque gifts dated Sunday
+// 23 August, and those 96 reached LGL four days after the weekend. Under "any
+// plate gift" the five cheques marked the week complete from the Wednesday
+// with $551.00 of plate standing in for $10,912.00. The money counters' sheet
+// for that Sunday matched the Sunday batch to $50.00, so "the count landed"
+// means the Sunday batch, 75 to 100 gifts, and not any cash or cheque in the
+// week (ALERT-2026-09-03-plate-is-not-the-count.md).
+//
+// Twenty is a judgement from that one measured week plus the hub's range: well
+// under a real basket, well over a week of mail. Recheck it once Barb keys the
+// collection at count time and a few weeks have run.
+//
+// WHAT IT COSTS. A weekend whose Offertory basket is genuinely tiny reads
+// "waiting on the count" until the next Sunday ends and the calendar takes
+// over. The PLT hub's D88 records Christmas and Easter as their own Pushpay
+// tally, so those are the weekends where that will happen.
+export const PLATE_BASKET_FLOOR = 20;
+
 export function detectPlate(gifts, startKey, weekKey) {
   const items = (gifts || []).filter((g) => {
     if (!isOffertory(g)) return false;
@@ -71,10 +93,11 @@ export function detectPlate(gifts, startKey, weekKey) {
   });
   const types = [...new Set(items.map(paymentTypeOf).filter(Boolean))];
   const typed = items.filter((g) => paymentTypeOf(g));
+  const plateCount = typed.filter((g) => isPlateType(paymentTypeOf(g))).length;
   const plateLanded = typed.length === 0
     ? null
-    : typed.some((g) => isPlateType(paymentTypeOf(g)));
-  return { plateLanded, giftCount: items.length, types };
+    : plateCount >= PLATE_BASKET_FLOOR;
+  return { plateLanded, giftCount: items.length, plateCount, types };
 }
 
 // ─── The route ───
@@ -122,9 +145,9 @@ export function plateStatusHandler({
       return res.json({ week: weekKey, plateLanded: null, error: err && err.message });
     }
 
-    const { plateLanded, giftCount, types } = detectPlate(gifts, startKey, weekKey);
-    console.log(`[plate] week ${weekKey}: ${giftCount} Offertory gifts in week, types=[${types.join(", ")}], plateLanded=${plateLanded}`);
-    const result = { week: weekKey, plateLanded, giftCount, types, refreshedAt: new Date().toISOString() };
+    const { plateLanded, giftCount, plateCount, types } = detectPlate(gifts, startKey, weekKey);
+    console.log(`[plate] week ${weekKey}: ${giftCount} Offertory gifts in week, ${plateCount} cash/check (floor ${PLATE_BASKET_FLOOR}), types=[${types.join(", ")}], plateLanded=${plateLanded}`);
+    const result = { week: weekKey, plateLanded, giftCount, plateCount, types, refreshedAt: new Date().toISOString() };
     cache[cacheKey] = { time: clock(), data: result };
     return res.json(result);
   };

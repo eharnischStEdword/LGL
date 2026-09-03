@@ -7,24 +7,39 @@
 // that into "cannot tell", and the evidence path was silently dead from at
 // least 2026-08-17. The first test below is the one that would have caught it.
 //
+// The second regression, 2026-09-03: ONE plate gift marked the week complete,
+// and one is what the mail brings. Five cheques dated the Thursday before a
+// Sunday called that Sunday's count landed a week early while the 96-gift
+// basket was still on its way. The count is the basket, and a basket is dozens
+// of gifts, so the detector now asks for PLATE_BASKET_FLOOR of them.
+//
 // Run with: npm test
 
 import test from "node:test";
 import assert from "node:assert/strict";
 import express from "express";
 
-import { plateStatusHandler, detectPlate, weekWindow } from "../plate-status.js";
+import { plateStatusHandler, detectPlate, weekWindow, PLATE_BASKET_FLOOR } from "../plate-status.js";
 import { _resetDump } from "../hub-exit.js";
 
 const START = "2026-08-10"; // Monday
 const WEEK = "2026-08-16";  // the Sunday that names the week
 
+// n cash and cheque gifts to the Offertory on one day. A basket is dozens of
+// these keyed against the Sunday; the mail is a handful on a weekday.
+const plate = (n, day = WEEK, from = 100) =>
+  Array.from({ length: n }, (unused, i) => ({
+    id: from + i, fund_name: "Offertory", received_date: day, received_amount: 20,
+    payment_type_name: i % 3 === 0 ? "Cash" : "Check",
+  }));
+
+const CARD = { id: 2, fund_name: "Offertory", received_date: "2026-08-14", received_amount: 40, payment_type_name: "Credit Card" };
+
 // Cash and check are plate money. eCheck and Cash App contain the letters and
 // are not. A gift with no payment type says nothing either way.
-const GIFTS = [
-  { id: 1, fund_name: "Offertory", received_date: "2026-08-16", received_amount: 100, payment_type_name: "Cash" },
-  { id: 2, fund_name: "Offertory", received_date: "2026-08-14", received_amount: 40, payment_type_name: "Credit Card" },
-];
+const BASKET = [...plate(PLATE_BASKET_FLOOR + 5), CARD];
+const MAIL_ONLY = [...plate(5, "2026-08-13", 300), CARD];
+const GIFTS = BASKET;
 const ONLINE_ONLY = [
   { id: 3, fund_name: "Offertory", received_date: "2026-08-14", received_amount: 40, payment_type_name: "E-Check (ACH)" },
   { id: 4, fund_name: "Offertory", received_date: "2026-08-15", received_amount: 10, payment_type_name: "Cash App" },
@@ -97,9 +112,26 @@ test("the updated_from query reaches back before the week, not to its Monday", a
   });
 });
 
-test("cash in the week means the count has landed", async () => {
+test("a basket of cash and cheques in the week means the count has landed", async () => {
   await serve(makeApp(), async (base) => {
-    assert.equal((await ask(base)).plateLanded, true);
+    const json = await ask(base);
+    assert.equal(json.plateLanded, true);
+    assert.equal(json.plateCount, PLATE_BASKET_FLOOR + 5);
+    assert.equal(json.giftCount, PLATE_BASKET_FLOOR + 6);
+  });
+});
+
+test("a handful of mail cheques is not the basket: the count has NOT landed", async () => {
+  // The week of 23 August 2026: five cheques dated the Thursday, in LGL by the
+  // Monday, and the 96-gift Sunday batch not there until the Friday. Under the
+  // old "any plate gift" rule this answered true from Monday and the dashboard
+  // called the week complete on the Wednesday with $551 of plate.
+  await serve(makeApp({ gifts: MAIL_ONLY }), async (base) => {
+    const json = await ask(base);
+    assert.equal(json.plateLanded, false);
+    assert.equal(json.plateCount, 5);
+    assert.equal(json.giftCount, 6);
+    assert.ok(json.types.includes("Check"), "the cheques are seen, they are just not a basket");
   });
 });
 
@@ -108,6 +140,7 @@ test("online-only giving means the count has NOT landed yet", async () => {
     const json = await ask(base);
     assert.equal(json.plateLanded, false);
     assert.equal(json.giftCount, 2);
+    assert.equal(json.plateCount, 0);
   });
 });
 
@@ -201,15 +234,48 @@ test("a second ask inside the TTL is served from the cache", async () => {
 // ─── The pieces, without a server ───
 
 test("detectPlate: the judgement is Offertory, in the week, with a type", () => {
+  // Enough Offertory plate gifts in the week to be a basket, plus a Building
+  // Fund cash gift and an Offertory cash gift from a fortnight earlier, neither
+  // of which may count towards it.
   const mixed = [
+    ...plate(PLATE_BASKET_FLOOR),
     { fund_name: "Offertory", received_date: "2026-08-16", payment_type: { name: "Check" } },
     { fund_name: "Building Fund", received_date: "2026-08-16", payment_type_name: "Cash" },
     { fund_name: "Offertory", received_date: "2026-08-01", payment_type_name: "Cash" },
   ];
   const out = detectPlate(mixed, START, WEEK);
   assert.equal(out.plateLanded, true);
-  assert.equal(out.giftCount, 1);
-  assert.deepEqual(out.types, ["Check"]);
+  assert.equal(out.giftCount, PLATE_BASKET_FLOOR + 1);
+  assert.equal(out.plateCount, PLATE_BASKET_FLOOR + 1);
+  assert.deepEqual(out.types.sort(), ["Cash", "Check"]);
+
+  // Take the basket away and the same two outsiders do not make one.
+  const outsiders = detectPlate(mixed.slice(PLATE_BASKET_FLOOR), START, WEEK);
+  assert.equal(outsiders.plateLanded, false);
+  assert.equal(outsiders.giftCount, 1);
+  assert.equal(outsiders.plateCount, 1);
+});
+
+test("detectPlate: the floor is the line between the mail and a basket", () => {
+  // One under the floor is the mail; the floor itself is a basket. Written
+  // against the constant so tuning the number does not break the suite, and
+  // so the boundary is the thing under test rather than a literal.
+  const under = detectPlate([...plate(PLATE_BASKET_FLOOR - 1), CARD], START, WEEK);
+  assert.equal(under.plateLanded, false);
+  assert.equal(under.plateCount, PLATE_BASKET_FLOOR - 1);
+
+  const at = detectPlate([...plate(PLATE_BASKET_FLOOR), CARD], START, WEEK);
+  assert.equal(at.plateLanded, true);
+  assert.equal(at.plateCount, PLATE_BASKET_FLOOR);
+
+  // Online types that contain the letters never count towards the floor.
+  const lookalikes = Array.from({ length: PLATE_BASKET_FLOOR }, (unused, i) => ({
+    id: 500 + i, fund_name: "Offertory", received_date: WEEK, received_amount: 20,
+    payment_type_name: i % 2 ? "E-Check (ACH)" : "Cash App",
+  }));
+  const fake = detectPlate(lookalikes, START, WEEK);
+  assert.equal(fake.plateLanded, false);
+  assert.equal(fake.plateCount, 0);
 });
 
 test("detectPlate: a gift with no received_date is not in anybody's week", () => {
