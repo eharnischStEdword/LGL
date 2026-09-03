@@ -129,6 +129,21 @@ implements the same contract in hub_exit.py; keep the two in step.
   `giving.lgl_plate` (cash and check, what came in the basket) and
   `giving.lgl_online` (every other payment type). The plate/online predicate is
   `isPlateType` in hub-exit.js, the SAME one the v2 plate-status detector uses.
+- ADDED 2026-09-03 (v1.10.0, still contract version 1, agreed with the PLT
+  session the same day): `giving.lgl_plate_sunday` (cash and check received on
+  a Sunday inside the period, the counted batch) and `giving.lgl_plate_midweek`
+  (every other day: mail and the office). They always add up to
+  `giving.lgl_plate`, which is unchanged. The gift count behind each travels in
+  the freshness signals as `plate_sunday_gifts` and `plate_midweek_gifts`. The
+  PLT session confirmed "Sunday" against the Pushpay export: 6,155 of 7,571
+  plate gifts are dated Sunday and the vigil is never dated Saturday; the
+  Wednesday rows are the pre-27-April-2025 era and fall into midweek, which is
+  fine because those weeks are never compared. Until the hub adds registry rows
+  and the two slugs to its lgl allowlist, it skips the keys and ignores the
+  signals, so this side ships first. Also checked live 2026-09-03: LGL keeps
+  NO Pushpay batch name ("Sunday Check Collection M/D/YY") on the gift in any
+  field, so the plate detector's count floor stays. A gift does carry
+  `created_at` and `deposit_date`, which could measure entry lag one day.
 - Gifts are filtered on `received_date`, the field the plate detector uses,
   because the hub sets these beside a hand count of the same Sunday.
 - A gift with no payment type is counted in NEITHER figure and disclosed in the

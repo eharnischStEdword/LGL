@@ -14,6 +14,7 @@ import express from "express";
 import {
   hubMetricsHandler,
   isPlateType,
+  isSundayDay,
   paymentTypeOf,
   summarizeOffertory,
   toCents,
@@ -53,6 +54,11 @@ const GIFTS = [
   // Offertory, before the period.
   { id: 90009, fund_name: "Offertory", received_date: "2026-08-09", received_amount: 777.00,
     payment_type_name: "Check", constituent_name: "Testcase Donor Nine" },
+  // Plate money dated the SUNDAY: the counted batch. One gift stands for the
+  // ninety-odd a real basket holds.
+  { id: 90010, fund_name: "Offertory", received_date: "2026-08-16", received_amount: 300.00,
+    payment_type_name: "Check", constituent_name: "Testcase Donor Ten",
+    email_address: "donor.ten@example.invalid", address: "10 Testcase Row" },
 ];
 
 // A stand-in for server.js, wired in the SAME order: the exact exit path, the
@@ -141,8 +147,14 @@ test("the numbers are right", async () => {
     const body = await resp.json();
     const got = Object.fromEntries(body.metrics.map((m) => [m.key, m.value]));
 
-    // Cash 100.00 plus Check 250.50, and nothing else.
-    assert.equal(got["giving.lgl_plate"], 35050);
+    // Cash 100.00 (Monday) plus Check 250.50 (Tuesday) plus Check 300.00
+    // (Sunday), and nothing else.
+    assert.equal(got["giving.lgl_plate"], 65050);
+    // The Sunday batch and the rest, and the two add up to the plate figure.
+    assert.equal(got["giving.lgl_plate_sunday"], 30000);
+    assert.equal(got["giving.lgl_plate_midweek"], 35050);
+    assert.equal(got["giving.lgl_plate_sunday"] + got["giving.lgl_plate_midweek"],
+      got["giving.lgl_plate"]);
     // E-Check 40.00 plus Cash App 10.00 plus Credit Card 500.25.
     assert.equal(got["giving.lgl_online"], 55025);
 
@@ -155,12 +167,14 @@ test("the numbers are right", async () => {
     assert.equal(signals.unclassified, 1);
     assert.equal(signals.unclassified_cents, 7500);
     assert.equal(signals.capped, 0);
+    assert.equal(signals.plate_sunday_gifts, 1);
+    assert.equal(signals.plate_midweek_gifts, 2);
 
     assert.equal(body.contract, 1);
     assert.equal(body.source, "lgl");
     assert.equal(body.period.from, FROM);
     assert.equal(body.period.to, TO);
-    assert.equal(body.freshness.records_in_period, 6);
+    assert.equal(body.freshness.records_in_period, 7);
     // The newest Offertory gift seen, which is after the period on purpose.
     assert.equal(body.freshness.last_record_at, "2026-08-18");
     assert.ok(body.generated_at);
@@ -178,11 +192,47 @@ test("the numbers are right", async () => {
 
 test("a gift with no payment type is never counted as plate", async () => {
   const summary = summarizeOffertory(
-    [{ fund_name: "Offertory", received_date: FROM, received_amount: 500 }], FROM, TO);
+    [{ fund_name: "Offertory", received_date: TO, received_amount: 500 }], FROM, TO);
   assert.equal(summary.plateCents, 0);
+  assert.equal(summary.plateSundayCents, 0);
+  assert.equal(summary.plateSundayGifts, 0);
   assert.equal(summary.onlineCents, 0);
   assert.equal(summary.unclassified, 1);
   assert.equal(summary.unclassifiedCents, 50000);
+});
+
+test("the plate splits by the day it was received: the Sunday batch and the rest", () => {
+  // The week of 17 to 23 August 2026 in miniature: five cheques of mail on the
+  // Thursday, ninety-six gifts of basket on the Sunday, one online gift, and a
+  // Saturday cash gift, which lands in midweek because the export never dates
+  // the vigil Saturday. Sunday plus midweek is the plate figure, always.
+  const week = [
+    ...Array.from({ length: 5 }, (unused, i) => ({
+      id: i, fund_name: "Offertory", received_date: "2026-08-20", received_amount: 110.20,
+      payment_type_name: "Check" })),
+    ...Array.from({ length: 96 }, (unused, i) => ({
+      id: 100 + i, fund_name: "Offertory", received_date: "2026-08-23", received_amount: 100,
+      payment_type_name: i % 3 ? "Check" : "Cash" })),
+    { id: 900, fund_name: "Offertory", received_date: "2026-08-22", received_amount: 25,
+      payment_type_name: "Cash" },
+    { id: 901, fund_name: "Offertory", received_date: "2026-08-23", received_amount: 50,
+      payment_type_name: "Card - VISA" },
+    // A Sunday plate gift OUTSIDE the period is nobody's batch.
+    { id: 902, fund_name: "Offertory", received_date: "2026-08-30", received_amount: 100,
+      payment_type_name: "Cash" },
+  ];
+  const s = summarizeOffertory(week, "2026-08-17", "2026-08-23");
+  assert.equal(s.plateSundayCents, 960000);
+  assert.equal(s.plateSundayGifts, 96);
+  assert.equal(s.plateMidweekCents, 55100 + 2500);
+  assert.equal(s.plateMidweekGifts, 6);
+  assert.equal(s.plateSundayCents + s.plateMidweekCents, s.plateCents);
+  assert.equal(s.onlineCents, 5000);
+  assert.equal(s.recordsInPeriod, 103);
+
+  assert.equal(isSundayDay("2026-08-23"), true);
+  assert.equal(isSundayDay("2026-08-22"), false, "Saturday is not Sunday");
+  assert.equal(isSundayDay("2026-08-24"), false, "Monday is not Sunday");
 });
 
 test("the payload carries nothing identifying", async () => {
@@ -303,7 +353,7 @@ test("a gift_date_from rejection is not fatal, because LGL does not accept that 
     const resp = await get(base, "/api/hub/v1/metrics" + RANGE, TOKEN);
     assert.equal(resp.status, 200, "a rejected second axis must not fail the read");
     const body = await resp.json();
-    assert.equal(body.freshness.records_in_period, 6);
+    assert.equal(body.freshness.records_in_period, 7);
   });
   assert.ok(calls.some((c) => c.startsWith("updated_from")),
     "the working axis was never asked");

@@ -153,8 +153,40 @@ export function exitToken() {
 // filing it under plate would make the hub read a basket that nobody counted.
 // It is disclosed instead, as a count and as an amount, so the payload can never
 // quietly under-report without saying that it did.
+//
+// THE SUNDAY SPLIT (2026-09-03, still contract version 1). The PLT hub sets the
+// plate figure beside the money counters' sheet for the Sunday, and the weekly
+// plate sum is the Sunday batch PLUS whatever cash or cheque reached the office
+// on other days. For the week of 17 to 23 August 2026 that was $10,361.00 of
+// Sunday batch and $551.00 of Thursday mail; the sheet matched the batch to
+// $50.00 and the week to $601.00. So plate money is also split by the day it
+// was received, a Sunday inside the period or any other day, and the two halves
+// always add up to giving.lgl_plate, which is unchanged: renaming or removing a
+// key is a new contract version and adding one is not.
+//
+// "Sunday" is the weekday of received_date, confirmed by the PLT session on
+// 2026-09-03 against the 17,293-row Pushpay export: 6,155 of 7,571 plate gifts
+// are dated Sunday, the vigil is never dated Saturday, and the 1,181 Wednesday
+// rows are the era before 27 April 2025 when the basket was dated to the count
+// day. Those old weeks fall into midweek under this rule and are never compared.
+//
+// The gift COUNT behind each half travels in the freshness block, because a
+// count is what separates a basket from three envelopes (plate-status.js) and
+// the hub's short-read detector judges a weekend on it.
+
+// The weekday of an ISO day string. Parsed as UTC so the server's own timezone
+// can never move a Sunday gift onto the Saturday.
+export const isSundayDay = (day) => {
+  const [y, m, d] = String(day).split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay() === 0;
+};
+
 export function summarizeOffertory(gifts, from, to) {
   let plateCents = 0;
+  let plateSundayCents = 0;
+  let plateMidweekCents = 0;
+  let plateSundayGifts = 0;
+  let plateMidweekGifts = 0;
   let onlineCents = 0;
   let unclassified = 0;
   let unclassifiedCents = 0;
@@ -181,11 +213,24 @@ export function summarizeOffertory(gifts, from, to) {
       unclassifiedCents += cents;
       continue;
     }
-    if (isPlateType(type)) plateCents += cents;
-    else onlineCents += cents;
+    if (isPlateType(type)) {
+      plateCents += cents;
+      if (isSundayDay(day)) {
+        plateSundayCents += cents;
+        plateSundayGifts += 1;
+      } else {
+        plateMidweekCents += cents;
+        plateMidweekGifts += 1;
+      }
+    } else {
+      onlineCents += cents;
+    }
   }
 
-  return { plateCents, onlineCents, unclassified, unclassifiedCents, recordsInPeriod, lastRecordAt };
+  return {
+    plateCents, plateSundayCents, plateMidweekCents, plateSundayGifts, plateMidweekGifts,
+    onlineCents, unclassified, unclassifiedCents, recordsInPeriod, lastRecordAt,
+  };
 }
 
 export function buildPayload({ from, to, summary, generatedAt }) {
@@ -206,11 +251,18 @@ export function buildPayload({ from, to, summary, generatedAt }) {
           note: "how much money those gifts carry, so the two figures can be reconciled against the fund total" },
         { key: "capped", value: 0,
           note: "the read reached the end of LGL's result set before anything was summed. A read that cannot be proved complete is refused, not reported" },
+        { key: "plate_sunday_gifts", value: summary.plateSundayGifts,
+          note: "cash and check Offertory gifts received on a Sunday in the period: the counted batch" },
+        { key: "plate_midweek_gifts", value: summary.plateMidweekGifts,
+          note: "cash and check Offertory gifts received on any other day: mail and the office" },
       ],
     },
     metrics: [
       { key: "giving.lgl_plate", value: summary.plateCents, unit: "cents" },
       { key: "giving.lgl_online", value: summary.onlineCents, unit: "cents" },
+      // Added 2026-09-03 inside version 1. The two always sum to giving.lgl_plate.
+      { key: "giving.lgl_plate_sunday", value: summary.plateSundayCents, unit: "cents" },
+      { key: "giving.lgl_plate_midweek", value: summary.plateMidweekCents, unit: "cents" },
     ],
   };
 }
