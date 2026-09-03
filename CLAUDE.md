@@ -204,6 +204,27 @@ implements the same contract in hub_exit.py; keep the two in step.
   that reports whether it finished. Both retry a 429 or a 5xx with a short backoff, which is the first
   rate-limit handling this repo has ever had. LGL's actual limits are NOT
   verified; 429-with-Retry-After is an assumption written down in that file.
+- "UNKNOWN" PAYMENT TYPES STAY FILED AS ONLINE (2026-09-03, decided with the
+  PLT session; Eric's call to reopen). From January to May 2025 LGL's payment
+  type on most Offertory gifts is the string "Unknown" (435 of 678 in January,
+  36 of 703 in May, none from June on; 2024 is blank). The exit files any
+  non-blank type that is not cash/check as online, so that money sits in
+  `giving.lgl_online`. Do NOT move it to unclassified: the hub reads exactly
+  six keys, `unclassified_cents` is not one of them, and on the hub plate plus
+  online IS the weekend's total (its D61), so the change would REMOVE about
+  $9,400 a week from fifteen weekends (16 February to 25 May 2025) that its
+  Last year window draws and averages. The label is right anyway: in January
+  2025 typed online gifts are 0 and Unknown is 435 while the plate holds
+  steady at 243, and Unknown falls exactly as typed online rises through May.
+  Unknown in that era was the online import before Pushpay's payment types
+  were mapped.
+- ENTRY LAG IS THE HUB'S CLOCK, not this exit's. The hub measures it from its
+  own correction rows (23 August 2026: $551 on Monday's 4 AM read, restated
+  to $10,912 on Friday's, so the batch reached LGL during Thursday the 27th,
+  S+5). No lag signal from here for now; if one is ever wanted it must be an
+  integer of days after the Sunday, never a timestamp, because the hub's
+  registry holds money and counts only. A gift does carry `created_at` and
+  `deposit_date` if that day comes.
 - Aggregates only. No donor name, no email, no gift id, no address, ever.
 
 ## Offertory gifts that never arrive (found 2026-08-28, from the PLT hub)
