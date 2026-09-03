@@ -352,7 +352,18 @@ evidence chart with Period/View segmented controls, merged Compare Years view
   ships (sundayCents/sundayGifts = the counted basket, midweekCents/Gifts =
   mail and office, onlineCents, unclassifiedCents, plus that week's
   plateLanded/plateCount). The read reaches back to the oldest week's Monday
-  plus the 45-day lookback and shares the hub's dump. lib.js attaches it as
+  plus the 45-day lookback and shares the hub's dump. TWO REQUESTS, IN ORDER
+  (v1.11.1): the eight-week read MEASURED 3,470 records in 77 seconds on live
+  LGL, past the route's 60-second budget, so a single weeks=8 ask answered
+  "cannot tell" for the newest week on the first load every ten minutes. The
+  client therefore asks `?week=` alone first (the short read, the judgement,
+  as before), then `&weeks=8` separately and retries up to five times while
+  the answer carries `retry: true` (a walk the clock or page count stopped
+  keeps its offset; the next request resumes it). A refusal on the record
+  ceiling or the bare-list cap answers `retry: false` and the parts stay
+  absent. Order matters: fired in parallel, a short read arriving second
+  CONTINUES the deeper in-progress walk and inherits its refusal. Do not add
+  weeks to the first request. lib.js attaches it as
   `parts` (dollars) to Offertory weeks only (fund name matched on /offertory/i,
   the same loose match DashboardV2 uses); All Funds and other funds get null.
   RecentWeeks draws a complete Offertory bar as a stack (basket darkest at the

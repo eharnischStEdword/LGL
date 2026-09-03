@@ -194,8 +194,20 @@ export function plateStatusHandler({
       gifts = await fetchGiftsForRange(fetchGiftsPaged, windows[0].startKey, readOpts || {});
     } catch (err) {
       if (err instanceof IncompleteRead) {
-        console.warn(`[plate] week ${weekKey}: read did not finish (${err.reason}) — client falls back to calendar rule`);
-        return res.json({ week: weekKey, plateLanded: null, error: err.publicMessage });
+        // `retry` says whether asking again will get further: a walk stopped by
+        // the clock or the page count kept its offset and the next request
+        // resumes it, so the client's split fetch asks again after a pause. A
+        // walk refused on the record ceiling or the bare-list cap is not going
+        // to finish however often it is asked.
+        //
+        // MEASURED 2026-09-03 on live LGL: the eight-week read (56 days plus
+        // the 45-day lookback) is 3,470 records in 77 seconds, past the
+        // 60-second budget, so the parts request needs two goes; the one-week
+        // read the judgement rides on fits in one. That is why DashboardV2 asks
+        // for the newest week's judgement first and the split separately.
+        const retry = err.reason === "budget" || err.reason === "pages";
+        console.warn(`[plate] week ${weekKey} (${nWeeks} week(s)): read did not finish (${err.reason})${retry ? ", resumable" : ""} — client falls back to calendar rule`);
+        return res.json({ week: weekKey, plateLanded: null, error: err.publicMessage, retry });
       }
       console.warn(`[plate] detector failed (${err && err.message}) — client falls back to calendar rule`);
       return res.json({ week: weekKey, plateLanded: null, error: err && err.message });

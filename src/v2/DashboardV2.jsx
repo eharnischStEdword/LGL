@@ -320,12 +320,35 @@ export default function DashboardV2() {
   useEffect(() => {
     const upcoming = weekEndingSunday(now);
     const lastEnded = upcoming.getTime() <= startOfDay(now).getTime() ? upcoming : addDays(upcoming, -7);
-    // weeks=8 also brings back each recent week's Offertory split (Sunday
-    // basket, mail and office, online) from the same read; see lib.js parts.
-    fetch(`/api/lgl-plate-status?week=${weekKey(lastEnded)}&weeks=8`)
-      .then(r => (r.ok ? r.json() : null))
-      .then(j => { if (j) setPlateStatus(j); })
-      .catch(() => {}); // no evidence — the calendar rule stands
+    const wk = weekKey(lastEnded);
+    let cancelled = false;
+    const get = (url) => fetch(url).then(r => (r.ok ? r.json() : null)).catch(() => null);
+    (async () => {
+      // Step one: the judgement about the newest week, on the short read,
+      // exactly as before. It arrives in well under a minute and nothing below
+      // may cost it.
+      const first = await get(`/api/lgl-plate-status?week=${wk}`);
+      if (cancelled) return;
+      if (first) setPlateStatus(first);
+
+      // Step two: each recent week's Offertory split (Sunday basket, mail and
+      // office, online; see lib.js parts). This is a deeper read of LGL,
+      // measured at 77 seconds for eight weeks against the route's 60-second
+      // budget, so the server may answer "did not finish, ask again" and each
+      // request resumes where the last one stopped. The parts simply appear
+      // when the walk is done; the judgement above is never touched by it.
+      for (let attempt = 0; attempt < 5 && !cancelled; attempt++) {
+        const deep = await get(`/api/lgl-plate-status?week=${wk}&weeks=8`);
+        if (cancelled) return;
+        if (deep && Array.isArray(deep.weeks)) {
+          setPlateStatus(prev => ({ ...(prev || deep), weeks: deep.weeks }));
+          return;
+        }
+        if (!deep || !deep.retry) return; // no evidence — the calendar rule stands
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    })();
+    return () => { cancelled = true; };
   }, [now]);
 
   const toggleFund = useCallback((fund) => {

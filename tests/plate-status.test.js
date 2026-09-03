@@ -201,6 +201,23 @@ test("a read that did not finish is null, never false", async () => {
     // exists. Answering false here would publish a short total as final.
     assert.equal(json.plateLanded, null);
     assert.ok(json.error, "the refusal says why");
+    // A walk the clock stopped kept its offset, so asking again gets further.
+    assert.equal(json.retry, true);
+    assert.equal(json.weeks, undefined, "no parts ride on a read that did not finish");
+  });
+});
+
+test("a read refused on a cap is not worth asking again", async () => {
+  // A bare list at the page cap has no offset to resume from; the client must
+  // not sit in a retry loop hoping it will.
+  _resetDump();
+  const flood = Array.from({ length: 4900 }, (unused, i) => ({
+    id: i, fund_name: "Offertory", received_date: WEEK, received_amount: 1, payment_type_name: "Cash",
+  }));
+  await serve(makeApp({ result: flood }), async (base) => {
+    const json = await ask(base);
+    assert.equal(json.plateLanded, null);
+    assert.equal(json.retry, false);
   });
 });
 
