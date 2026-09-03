@@ -112,8 +112,15 @@ Push to main branch. Render auto-deploys from GitHub.
   ones. Seen the same day: week ending 2026-08-23 answered plateLanded=true on
   Friday 28 August (172 gifts); week ending 2026-08-30 answered false through
   Thursday 3 September (79 gifts, all online), so that basket was NOT in LGL by
-  Thursday. (The gift report/CSV paths still expose no payment type; only this
-  server-side API check sees it.)
+  Thursday. CORRECTED 2026-09-03: BOTH scheduled reports DO carry a "Payment
+  type" column (Eric had it checked in the export fields all along; an earlier
+  note here said otherwise without looking). Verified by reading both links:
+  the Offertory xlsx (28 columns) and the FULL GIVING REPORT csv (about 190
+  columns, including "Parent gift pmt. type", which column detection must not
+  match). Values: Check, Cash, ACH, Card - VISA/MasterCard/Amex/Discover with
+  (Apple Pay) variants, an older "Credit Card", "Unknown", and blank. Fully
+  typed from June 2025 on; January to May 2025 largely "Unknown" (435 of 678
+  gifts in January, 36 of 703 in May); all of 2024 blank (pre-LGL history).
 - 5-minute server-side cache on hybrid/recent endpoints
 
 ## PLT hub exit (added 2026-08-20)
@@ -346,33 +353,34 @@ evidence chart with Period/View segmented controls, merged Compare Years view
   prior-year partner week = 364 days back; holy-day weeks (Christmas, Easter,
   Ash Wednesday) suppress percent comparisons; weekly floor is Jan 2025
   (HISTORICAL_MONTHLY is monthly-only and never feeds weekly buckets).
-- Offertory parts (2026-09-03, v1.11.0): DashboardV2 asks
-  /api/lgl-plate-status?week=…&weeks=8 and the response's `weeks` array
-  carries each week's split from the SAME summarizeOffertory the hub exit
-  ships (sundayCents/sundayGifts = the counted basket, midweekCents/Gifts =
-  mail and office, onlineCents, unclassifiedCents, plus that week's
-  plateLanded/plateCount). The read reaches back to the oldest week's Monday
-  plus the 45-day lookback and shares the hub's dump. TWO REQUESTS, IN ORDER
-  (v1.11.1): the eight-week read MEASURED 3,470 records in 77 seconds on live
-  LGL, past the route's 60-second budget, so a single weeks=8 ask answered
-  "cannot tell" for the newest week on the first load every ten minutes. The
-  client therefore asks `?week=` alone first (the short read, the judgement,
-  as before), then `&weeks=8` separately and retries up to five times while
-  the answer carries `retry: true` (a walk the clock or page count stopped
-  keeps its offset; the next request resumes it). A refusal on the record
-  ceiling or the bare-list cap answers `retry: false` and the parts stay
-  absent. Order matters: fired in parallel, a short read arriving second
-  CONTINUES the deeper in-progress walk and inherits its refusal. Do not add
-  weeks to the first request. lib.js attaches it as
-  `parts` (dollars) to Offertory weeks only (fund name matched on /offertory/i,
-  the same loose match DashboardV2 uses); All Funds and other funds get null.
-  RecentWeeks draws a complete Offertory bar as a stack (basket darkest at the
-  baseline, then mail, then online; counting weeks stay striped gold) with a
-  legend, and its tooltip names the live-read total whenever it differs from
-  the bar's report-file total by a dollar or more, so parts never silently fail
-  to add up. The answer band prints "Sunday basket $X (n gifts) · mail &
-  office $Y · online $Z" under the week's number, and "Sunday basket not
-  entered yet · online $Z so far" on a counting week.
+- Offertory parts (2026-09-03, v1.11.0 to v1.12.0): every gift row v2 loads
+  carries `paymentType` (detectColumns finds "Payment type" on both reports;
+  the hybrid endpoint and /api/lgl-recent-gifts carry the API top-up's
+  payment_type_name into the same column, so a topped-up gift splits like the
+  rows around it). lib.js `buildWeekParts` splits each week's Offertory gifts
+  into the Sunday basket (cash/check with a Sunday date, the counted
+  collection), mail and office (cash/check on any other day), online, and
+  untyped (blank or "Unknown"), from the SAME rows as the bar, so the parts
+  always add up to it. The plate line is `isPlateType`, copied from hub-exit.js
+  because that file is server code; tests/weekly-parts.test.js asserts the two
+  agree. buildWeeklyModel attaches `parts` (dollars) to Offertory weeks only
+  (fund matched on /offertory/i, the same loose match DashboardV2 uses); All
+  Funds and other funds get null. RecentWeeks draws a complete Offertory bar as
+  a stack (basket darkest at the baseline, then mail, online, untyped in gray;
+  counting weeks stay striped gold) with a legend and a tooltip naming each
+  part; the answer band prints "Sunday basket $X (n gifts) · mail & office $Y
+  · online $Z" under the week's number and "Sunday basket not entered yet ·
+  online $Z so far" on a counting week.
+  HISTORY, so nobody rebuilds it: v1.11.0 took the split from a deep LGL API
+  read (/api/lgl-plate-status?weeks=8) because CLAUDE.md said the reports had
+  no payment type. That read MEASURED 3,470 records in 77 seconds on live LGL
+  (LGL serves about 100 rows per 2.2-second round trip whatever page size is
+  asked), past the route's 60-second budget, and cost the newest week its
+  judgement on first load; v1.11.1 split it into two requests with retries;
+  v1.12.0 dropped it once the report column was found. The route still answers
+  `?weeks=N` (max 12) with per-week parts from summarizeOffertory, kept for
+  SSH verification against the hub's figures, and the client asks `?week=`
+  alone. Never put weeks=N on the dashboard's request.
 - v2 requests the API top-up with ?axis=union: server queries updated_from AND
   gift_date_from and merges, with guards (received-date post-filter + count
   heuristic) so an invalid gift_date_from key can never make results worse than

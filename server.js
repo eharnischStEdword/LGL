@@ -317,7 +317,13 @@ function detectColumnsServer(headers) {
     }
     return null;
   }
-  return { dateCol: findCol(datePatterns), amountCol: findCol(amountPatterns), fundCol: findCol(fundPatterns) };
+  // "Payment type" is on both scheduled reports (verified 2026-09-03); the
+  // parent exclusion above keeps "Parent gift pmt. type" out of the match.
+  const paymentPatterns = ["payment type", "payment_type", "payment"];
+  return {
+    dateCol: findCol(datePatterns), amountCol: findCol(amountPatterns),
+    fundCol: findCol(fundPatterns), paymentCol: findCol(paymentPatterns),
+  };
 }
 
 // Fetching gifts from the LGL API lives in lgl-api.js now. fetchLGLApiGiftsAxis
@@ -376,11 +382,14 @@ async function fetchLGLApiGifts(sinceDate, fundFilter, axis) {
 }
 
 // Convert an LGL API gift object to a row matching the spreadsheet columns
-function apiGiftToRow(gift, dateCol, amountCol, fundCol) {
+function apiGiftToRow(gift, dateCol, amountCol, fundCol, paymentCol) {
   const row = {};
   row[dateCol] = gift.received_date || "";
   row[amountCol] = gift.received_amount || 0;
   row[fundCol] = gift.fund_name || "";
+  // Carried when the report has the column, so a topped-up gift splits into
+  // basket, mail or online on v2 like the rows around it. v1 ignores it.
+  if (paymentCol) row[paymentCol] = gift.payment_type_name || (gift.payment_type && gift.payment_type.name) || "";
   return row;
 }
 
@@ -441,7 +450,7 @@ async function hybridFetch(permanentLinkUrl, fundFilter, res, axis) {
 
   // 4. Detect columns
   const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
-  const { dateCol, amountCol, fundCol } = detectColumnsServer(headers);
+  const { dateCol, amountCol, fundCol, paymentCol } = detectColumnsServer(headers);
 
   let apiGiftsAdded = 0;
 
@@ -459,7 +468,7 @@ async function hybridFetch(permanentLinkUrl, fundFilter, res, axis) {
 
       // Add new API gifts that aren't already in the permanent link
       for (const gift of apiGifts) {
-        const newRow = apiGiftToRow(gift, dateCol, amountCol, fundCol);
+        const newRow = apiGiftToRow(gift, dateCol, amountCol, fundCol, paymentCol);
         const key = deduplicateKey(newRow, dateCol, amountCol, fundCol);
         if (!seen.has(key)) {
           rows.push(newRow);
@@ -519,11 +528,13 @@ app.get("/api/lgl-recent-gifts", requireAuth, async (req, res) => {
   try {
     const apiGifts = await fetchLGLApiGifts(sinceDate, undefined, axis);
     console.log(`[recent] API returned ${apiGifts.length} gifts since ${sinceDate}`);
-    // Return minimal row data the frontend can merge
+    // Return minimal row data the frontend can merge. paymentType feeds the v2
+    // Offertory parts; v1 ignores it.
     const gifts = apiGifts.map(g => ({
       date: g.received_date || "",
       amount: g.received_amount || 0,
       fund: g.fund_name || "",
+      paymentType: g.payment_type_name || (g.payment_type && g.payment_type.name) || "",
     }));
     const result = { gifts, refreshedAt: new Date().toISOString() };
     hybridCache[cacheKey] = { time: Date.now(), data: result };

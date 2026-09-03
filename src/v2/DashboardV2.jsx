@@ -195,8 +195,11 @@ export default function DashboardV2() {
       const date = parseDateFlexible(row[cols.dateCol]);
       const amount = parseAmount(row[cols.amountCol]);
       const fund = String(row[cols.fundCol] || "").trim();
+      // Payment type feeds the Offertory parts (lib.js buildWeekParts); a
+      // report without the column, or a blank cell, reads as untyped.
+      const paymentType = cols.paymentCol ? String(row[cols.paymentCol] || "").trim() : "";
       if (date && fund && date >= DATA_FLOOR) {
-        gifts.push({ date, amount, fund });
+        gifts.push({ date, amount, fund, paymentType });
         fundSet.add(fund);
       }
     }
@@ -258,6 +261,7 @@ export default function DashboardV2() {
                     newRow[cols.dateCol] = g.date;
                     newRow[cols.amountCol] = g.amount;
                     newRow[cols.fundCol] = g.fund;
+                    if (cols.paymentCol) newRow[cols.paymentCol] = g.paymentType || "";
                     rows.push(newRow);
                     seen.add(key);
                     added++;
@@ -320,35 +324,15 @@ export default function DashboardV2() {
   useEffect(() => {
     const upcoming = weekEndingSunday(now);
     const lastEnded = upcoming.getTime() <= startOfDay(now).getTime() ? upcoming : addDays(upcoming, -7);
-    const wk = weekKey(lastEnded);
-    let cancelled = false;
-    const get = (url) => fetch(url).then(r => (r.ok ? r.json() : null)).catch(() => null);
-    (async () => {
-      // Step one: the judgement about the newest week, on the short read,
-      // exactly as before. It arrives in well under a minute and nothing below
-      // may cost it.
-      const first = await get(`/api/lgl-plate-status?week=${wk}`);
-      if (cancelled) return;
-      if (first) setPlateStatus(first);
-
-      // Step two: each recent week's Offertory split (Sunday basket, mail and
-      // office, online; see lib.js parts). This is a deeper read of LGL,
-      // measured at 77 seconds for eight weeks against the route's 60-second
-      // budget, so the server may answer "did not finish, ask again" and each
-      // request resumes where the last one stopped. The parts simply appear
-      // when the walk is done; the judgement above is never touched by it.
-      for (let attempt = 0; attempt < 5 && !cancelled; attempt++) {
-        const deep = await get(`/api/lgl-plate-status?week=${wk}&weeks=8`);
-        if (cancelled) return;
-        if (deep && Array.isArray(deep.weeks)) {
-          setPlateStatus(prev => ({ ...(prev || deep), weeks: deep.weeks }));
-          return;
-        }
-        if (!deep || !deep.retry) return; // no evidence — the calendar rule stands
-        await new Promise(r => setTimeout(r, 2000));
-      }
-    })();
-    return () => { cancelled = true; };
+    // One week only. The route can answer ?weeks=8 with each week's split, but
+    // that read measured 77 seconds on live LGL against a 60-second budget and
+    // cost the judgement on first load; the Offertory parts now come from the
+    // report rows themselves (lib.js buildWeekParts), which carry the payment
+    // type, so nothing here needs the deep walk.
+    fetch(`/api/lgl-plate-status?week=${weekKey(lastEnded)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j) setPlateStatus(j); })
+      .catch(() => {}); // no evidence — the calendar rule stands
   }, [now]);
 
   const toggleFund = useCallback((fund) => {

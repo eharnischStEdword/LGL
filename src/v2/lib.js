@@ -59,6 +59,10 @@ export function detectColumns(headers) {
   const datePatterns = ["gift date", "gift_date", "giftdate", "date", "deposit date", "deposit_date"];
   const amountPatterns = ["gift amount", "gift_amount", "giftamount", "amount", "gift amt", "total"];
   const fundPatterns = ["fund", "fund name", "fund_name"];
+  // Both LGL scheduled reports carry "Payment type" (verified 2026-09-03: the
+  // Offertory xlsx and the FULL GIVING REPORT csv). The All Funds csv also has
+  // "Parent gift pmt. type", which the parent exclusion below keeps out.
+  const paymentPatterns = ["payment type", "payment_type", "payment"];
   function findCol(patterns) {
     for (const p of patterns) {
       const idx = lower.findIndex(h => h === p);
@@ -73,8 +77,27 @@ export function detectColumns(headers) {
   return {
     dateCol: findCol(datePatterns),
     amountCol: findCol(amountPatterns),
-    fundCol: findCol(fundPatterns)
+    fundCol: findCol(fundPatterns),
+    paymentCol: findCol(paymentPatterns),
   };
+}
+
+/* ── payment kinds (v2 only) ──
+   The plate/online line is the SAME one hub-exit.js draws for the PLT hub
+   (isPlateType there): cash or check by whole word, with eCheck and Cash App
+   kept out because they contain the letters and arrive with nobody counting a
+   basket. Copied rather than imported because hub-exit.js is server code (it
+   imports node's crypto); tests/weekly-parts.test.js asserts the two agree.
+   A blank or "Unknown" type is neither: LGL holds no payment type for the
+   pre-June-2025 rows (all of 2024 is blank, January to May 2025 is largely
+   "Unknown"), and filing those under either half would invent a basket. */
+export const isPlateType = (t) =>
+  !!t && /\b(cash|check)\b/i.test(t) && !/e-?check/i.test(t) && !/cash app/i.test(t);
+
+export function paymentKind(type) {
+  const t = String(type || "").trim();
+  if (!t || /^unknown$/i.test(t)) return "untyped";
+  return isPlateType(t) ? "plate" : "online";
 }
 
 /* ── verbatim v1 date/bucket helpers ── */
@@ -307,22 +330,40 @@ export function buildWeekTotals(rawGifts, fund) {
   return totals;
 }
 
-// The Offertory split from /api/lgl-plate-status?weeks=N, in dollars. Cents
-// arrive as integers from the same summary the PLT hub is sent; the client
-// divides once, here, and never rounds again. A field the server did not send
-// reads as zero rather than NaN.
-export function partsFromSplit(p) {
-  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
-  const basket = num(p && p.sundayCents) / 100;
-  const mail = num(p && p.midweekCents) / 100;
-  const online = num(p && p.onlineCents) / 100;
-  const untyped = num(p && p.unclassifiedCents) / 100;
-  return {
-    basket, basketGifts: num(p && p.sundayGifts),
-    mail, mailGifts: num(p && p.midweekGifts),
-    online, untyped,
-    total: basket + mail + online + untyped,
-  };
+// Each week's Offertory parts, from the SAME gift rows the bars are built
+// from, so the parts always add up to the bar. Sunday-dated cash and cheques
+// are the basket the money counters counted (the PLT session confirmed against
+// the Pushpay export on 2026-09-03 that the vigil is never dated Saturday);
+// cash and cheques on any other day are mail and the office; every other
+// payment type is online; a blank or Unknown type is untyped and shown as
+// such. Money is in dollars here, as everywhere on the client.
+//
+// This replaced a deep read of the LGL API (v1.11.0, the same day) that took
+// 77 seconds for eight weeks. The report file had carried the payment type
+// all along, which CLAUDE.md had wrongly said it did not.
+export function buildWeekParts(rawGifts, fund) {
+  const parts = new Map(); // weekKey -> parts
+  for (const g of rawGifts) {
+    if (g.date < WEEKLY_FLOOR) continue;
+    if (fund && g.fund !== fund) continue;
+    const key = weekKey(weekEndingSunday(g.date));
+    let p = parts.get(key);
+    if (!p) {
+      p = { basket: 0, basketGifts: 0, mail: 0, mailGifts: 0, online: 0, untyped: 0, total: 0 };
+      parts.set(key, p);
+    }
+    const kind = paymentKind(g.paymentType);
+    if (kind === "plate") {
+      if (g.date.getDay() === 0) { p.basket += g.amount; p.basketGifts += 1; }
+      else { p.mail += g.amount; p.mailGifts += 1; }
+    } else if (kind === "online") {
+      p.online += g.amount;
+    } else {
+      p.untyped += g.amount;
+    }
+    p.total += g.amount;
+  }
+  return parts;
 }
 
 // The full weekly model for the Recent Weeks panel + answer band.
@@ -344,15 +385,10 @@ export function buildWeeklyModel(rawGifts, fund, now, nWeeks = 8, plateStatus = 
   const upcoming = weekEndingSunday(today);
   const lastEnded = upcoming.getTime() <= today.getTime() ? upcoming : addDays(upcoming, -7);
 
-  // The Offertory split (Sunday basket, mail and office, online) from the live
-  // LGL read, for the weeks it covered. Offertory only: it is the one fund the
-  // read splits, and the parts of "All Funds" would be a different question.
-  const splitByWeek = new Map();
-  if (fund && /offertory/i.test(fund) && plateStatus && Array.isArray(plateStatus.weeks)) {
-    for (const p of plateStatus.weeks) {
-      if (p && p.week) splitByWeek.set(p.week, partsFromSplit(p));
-    }
-  }
+  // The Offertory split (Sunday basket, mail and office, online, untyped) from
+  // the same gifts as the totals. Offertory only: the basket is an Offertory
+  // idea, and the parts of "All Funds" would be a different question.
+  const splitByWeek = fund && /offertory/i.test(fund) ? buildWeekParts(rawGifts, fund) : new Map();
 
   const weeks = [];
   for (let i = nWeeks - 1; i >= 0; i--) {

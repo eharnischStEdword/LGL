@@ -28,23 +28,21 @@ function Swatch({ color }) {
   );
 }
 
-// The tooltip's second half. The bar's total comes from the report file and
-// the parts from the live LGL read; when the two disagree by a dollar or more
-// the read's own total is named, so the screen never shows parts that fail to
-// add up to the number above them without saying so.
+// The tooltip's second half. The parts are built from the same gift rows as
+// the bar, so they add up to it; an untyped part (LGL holds no payment type
+// for the row, common before June 2025) is named whenever it is not zero.
 function partsTitle(w) {
   if (!w.parts) return "";
   const p = w.parts;
+  const untyped = p.untyped > 0 ? ` · untyped ${fmtWhole(p.untyped)}` : "";
   // A counting week with no basket yet says so, rather than "$0 (0 gifts)".
   if (!w.complete && p.basket === 0) {
     return ` · Sunday basket not entered yet · online ${fmtWhole(p.online)} so far`
-      + (p.mail > 0 ? ` · mail & office ${fmtWhole(p.mail)} (${p.mailGifts})` : "");
+      + (p.mail > 0 ? ` · mail & office ${fmtWhole(p.mail)} (${p.mailGifts})` : "") + untyped;
   }
-  let s = ` · Sunday basket ${fmtWhole(p.basket)} (${p.basketGifts} gifts)`
+  return ` · Sunday basket ${fmtWhole(p.basket)} (${p.basketGifts} gifts)`
     + ` · mail & office ${fmtWhole(p.mail)} (${p.mailGifts})`
-    + ` · online ${fmtWhole(p.online)}`;
-  if (Math.abs(p.total - w.total) >= 1) s += ` · live LGL read total ${fmtWhole(p.total)}`;
-  return s;
+    + ` · online ${fmtWhole(p.online)}` + untyped;
 }
 
 export default function RecentWeeks({ weeklyModel, weeklyFund, funds, onFundChange, fyPace, now }) {
@@ -159,10 +157,11 @@ function WeeklyBody({ weeklyModel, fyPace, now }) {
           </span>
         )}
         {weeks.some(w => w.parts) && (
-          <span style={{ color: T.ink2 }} title="Cash and checks dated to the Sunday are the basket the money counters counted; cash and checks on other days are mail and office; the rest is online. From a live read of LGL.">
+          <span style={{ color: T.ink2 }} title="Cash and checks dated to the Sunday are the basket the money counters counted; cash and checks on other days are mail and office; the rest is online. Untyped means LGL holds no payment type for the gift, which is common before June 2025.">
             <Swatch color={T.green} />Sunday basket&nbsp;&nbsp;
             <Swatch color={PART_COLORS.mail} />mail &amp; office&nbsp;&nbsp;
             <Swatch color={PART_COLORS.online} />online
+            {weeks.some(w => w.parts && w.parts.untyped > 0) && <>&nbsp;&nbsp;<Swatch color={PART_COLORS.untyped} />untyped</>}
           </span>
         )}
         {thisWeekSoFar != null && thisWeekSoFar > 0 && (

@@ -108,6 +108,7 @@ function WeekBlock({ weeklyModel, fundLabel, now }) {
       {lc.parts && (
         <div style={{ fontSize: 12.5, color: T.ink2, marginBottom: 8 }}>
           Sunday basket <b>{fmtWhole(lc.parts.basket)}</b> ({lc.parts.basketGifts} gifts) &middot; mail &amp; office {fmtWhole(lc.parts.mail)} &middot; online {fmtWhole(lc.parts.online)}
+          {lc.parts.untyped > 0 && <> &middot; untyped {fmtWhole(lc.parts.untyped)}</>}
         </div>
       )}
       {comparisons}
