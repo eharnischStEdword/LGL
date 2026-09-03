@@ -307,6 +307,24 @@ export function buildWeekTotals(rawGifts, fund) {
   return totals;
 }
 
+// The Offertory split from /api/lgl-plate-status?weeks=N, in dollars. Cents
+// arrive as integers from the same summary the PLT hub is sent; the client
+// divides once, here, and never rounds again. A field the server did not send
+// reads as zero rather than NaN.
+export function partsFromSplit(p) {
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const basket = num(p && p.sundayCents) / 100;
+  const mail = num(p && p.midweekCents) / 100;
+  const online = num(p && p.onlineCents) / 100;
+  const untyped = num(p && p.unclassifiedCents) / 100;
+  return {
+    basket, basketGifts: num(p && p.sundayGifts),
+    mail, mailGifts: num(p && p.midweekGifts),
+    online, untyped,
+    total: basket + mail + online + untyped,
+  };
+}
+
 // The full weekly model for the Recent Weeks panel + answer band.
 // Returns null when there is no live weekly data at all.
 // plateStatus (optional, from /api/lgl-plate-status) is EVIDENCE that beats
@@ -326,6 +344,16 @@ export function buildWeeklyModel(rawGifts, fund, now, nWeeks = 8, plateStatus = 
   const upcoming = weekEndingSunday(today);
   const lastEnded = upcoming.getTime() <= today.getTime() ? upcoming : addDays(upcoming, -7);
 
+  // The Offertory split (Sunday basket, mail and office, online) from the live
+  // LGL read, for the weeks it covered. Offertory only: it is the one fund the
+  // read splits, and the parts of "All Funds" would be a different question.
+  const splitByWeek = new Map();
+  if (fund && /offertory/i.test(fund) && plateStatus && Array.isArray(plateStatus.weeks)) {
+    for (const p of plateStatus.weeks) {
+      if (p && p.week) splitByWeek.set(p.week, partsFromSplit(p));
+    }
+  }
+
   const weeks = [];
   for (let i = nWeeks - 1; i >= 0; i--) {
     const endSunday = addDays(lastEnded, -7 * i);
@@ -342,6 +370,7 @@ export function buildWeeklyModel(rawGifts, fund, now, nWeeks = 8, plateStatus = 
       total: totals.get(weekKey(endSunday)) || 0,
       complete,
       holyDay: isHolyDayWeek(endSunday),
+      parts: splitByWeek.get(weekKey(endSunday)) || null,
     });
   }
   if (weeks.length === 0) return null;

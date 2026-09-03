@@ -346,6 +346,22 @@ evidence chart with Period/View segmented controls, merged Compare Years view
   prior-year partner week = 364 days back; holy-day weeks (Christmas, Easter,
   Ash Wednesday) suppress percent comparisons; weekly floor is Jan 2025
   (HISTORICAL_MONTHLY is monthly-only and never feeds weekly buckets).
+- Offertory parts (2026-09-03, v1.11.0): DashboardV2 asks
+  /api/lgl-plate-status?week=…&weeks=8 and the response's `weeks` array
+  carries each week's split from the SAME summarizeOffertory the hub exit
+  ships (sundayCents/sundayGifts = the counted basket, midweekCents/Gifts =
+  mail and office, onlineCents, unclassifiedCents, plus that week's
+  plateLanded/plateCount). The read reaches back to the oldest week's Monday
+  plus the 45-day lookback and shares the hub's dump. lib.js attaches it as
+  `parts` (dollars) to Offertory weeks only (fund name matched on /offertory/i,
+  the same loose match DashboardV2 uses); All Funds and other funds get null.
+  RecentWeeks draws a complete Offertory bar as a stack (basket darkest at the
+  baseline, then mail, then online; counting weeks stay striped gold) with a
+  legend, and its tooltip names the live-read total whenever it differs from
+  the bar's report-file total by a dollar or more, so parts never silently fail
+  to add up. The answer band prints "Sunday basket $X (n gifts) · mail &
+  office $Y · online $Z" under the week's number, and "Sunday basket not
+  entered yet · online $Z so far" on a counting week.
 - v2 requests the API top-up with ?axis=union: server queries updated_from AND
   gift_date_from and merges, with guards (received-date post-filter + count
   heuristic) so an invalid gift_date_from key can never make results worse than

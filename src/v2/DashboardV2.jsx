@@ -320,7 +320,9 @@ export default function DashboardV2() {
   useEffect(() => {
     const upcoming = weekEndingSunday(now);
     const lastEnded = upcoming.getTime() <= startOfDay(now).getTime() ? upcoming : addDays(upcoming, -7);
-    fetch(`/api/lgl-plate-status?week=${weekKey(lastEnded)}`)
+    // weeks=8 also brings back each recent week's Offertory split (Sunday
+    // basket, mail and office, online) from the same read; see lib.js parts.
+    fetch(`/api/lgl-plate-status?week=${weekKey(lastEnded)}&weeks=8`)
       .then(r => (r.ok ? r.json() : null))
       .then(j => { if (j) setPlateStatus(j); })
       .catch(() => {}); // no evidence — the calendar rule stands

@@ -25,9 +25,16 @@ import {
   isPlateType,
   paymentTypeOf,
   receivedDay,
+  summarizeOffertory,
 } from "./hub-exit.js";
 
 export const PLATE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+// How many ended weeks one request may ask the split for (`?weeks=N`). The
+// Recent Weeks panel shows eight; twelve leaves room without letting a typo
+// ask LGL for a year. Each extra week reaches the read seven days further
+// back, on top of the 45-day entry lookback the shared read already has.
+export const MAX_WEEKS = 12;
 
 const fmtDay = (dt) =>
   `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
@@ -50,6 +57,50 @@ export function weekWindow(weekParam, now = new Date()) {
   }
   const weekStart = new Date(endSunday.getFullYear(), endSunday.getMonth(), endSunday.getDate() - 6);
   return { startKey: fmtDay(weekStart), weekKey: fmtDay(endSunday) };
+}
+
+// The n ended weeks up to and including weekKey, OLDEST FIRST, which is the
+// order the Recent Weeks panel draws them in.
+export function weekWindows(weekKey, n) {
+  const [y, m, d] = String(weekKey).split("-").map(Number);
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const end = new Date(y, m - 1, d - 7 * i);
+    const start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 6);
+    out.push({ startKey: fmtDay(start), weekKey: fmtDay(end) });
+  }
+  return out;
+}
+
+// `?weeks=` as a number this route is willing to serve. Nonsense is one week,
+// which is what every caller before 2026-09-03 got.
+export function clampWeeks(raw) {
+  const n = parseInt(String(raw === undefined || raw === null ? "" : raw), 10);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(n, MAX_WEEKS);
+}
+
+// One week's parts for the fund dashboard: the Sunday basket, the mail and
+// office cash and cheques received on other days, and online. It is the SAME
+// summarizeOffertory the hub exit ships to the PLT hub, called on the same
+// gifts, so the two dashboards cannot disagree about a week. Money is cents
+// here as it is there; the client turns it into dollars once, at the edge.
+export function weekParts(gifts, startKey, weekKey) {
+  const s = summarizeOffertory(gifts, startKey, weekKey);
+  const d = detectPlate(gifts, startKey, weekKey);
+  return {
+    week: weekKey,
+    start: startKey,
+    plateLanded: d.plateLanded,
+    giftCount: d.giftCount,
+    plateCount: d.plateCount,
+    sundayCents: s.plateSundayCents,
+    sundayGifts: s.plateSundayGifts,
+    midweekCents: s.plateMidweekCents,
+    midweekGifts: s.plateMidweekGifts,
+    onlineCents: s.onlineCents,
+    unclassifiedCents: s.unclassifiedCents,
+  };
 }
 
 // THE JUDGEMENT, given the gifts.
@@ -122,12 +173,17 @@ export function plateStatusHandler({
 }) {
   return async function plateStatus(req, res) {
     const { startKey, weekKey } = weekWindow(req.query && req.query.week, now());
+    // The split for the last N weeks rides on the same read (2026-09-03). The
+    // read reaches back to the OLDEST week's Monday; the judgement about the
+    // count is still made on the newest week alone, as before.
+    const nWeeks = clampWeeks(req.query && req.query.weeks);
+    const windows = weekWindows(weekKey, nWeeks);
 
     if (!hasApiKey()) {
       return res.json({ week: weekKey, plateLanded: null, message: "No LGL_API_KEY configured" });
     }
 
-    const cacheKey = `plate_${weekKey}`;
+    const cacheKey = `plate_${weekKey}_${nWeeks}`;
     const cached = cache[cacheKey];
     if (cached && clock() - cached.time < ttlMs) {
       return res.json(cached.data);
@@ -135,7 +191,7 @@ export function plateStatusHandler({
 
     let gifts;
     try {
-      gifts = await fetchGiftsForRange(fetchGiftsPaged, startKey, readOpts || {});
+      gifts = await fetchGiftsForRange(fetchGiftsPaged, windows[0].startKey, readOpts || {});
     } catch (err) {
       if (err instanceof IncompleteRead) {
         console.warn(`[plate] week ${weekKey}: read did not finish (${err.reason}) — client falls back to calendar rule`);
@@ -146,8 +202,9 @@ export function plateStatusHandler({
     }
 
     const { plateLanded, giftCount, plateCount, types } = detectPlate(gifts, startKey, weekKey);
-    console.log(`[plate] week ${weekKey}: ${giftCount} Offertory gifts in week, ${plateCount} cash/check (floor ${PLATE_BASKET_FLOOR}), types=[${types.join(", ")}], plateLanded=${plateLanded}`);
-    const result = { week: weekKey, plateLanded, giftCount, plateCount, types, refreshedAt: new Date().toISOString() };
+    const weeks = windows.map((w) => weekParts(gifts, w.startKey, w.weekKey));
+    console.log(`[plate] week ${weekKey}: ${giftCount} Offertory gifts in week, ${plateCount} cash/check (floor ${PLATE_BASKET_FLOOR}), types=[${types.join(", ")}], plateLanded=${plateLanded}, split for ${nWeeks} week(s)`);
+    const result = { week: weekKey, plateLanded, giftCount, plateCount, types, weeks, refreshedAt: new Date().toISOString() };
     cache[cacheKey] = { time: clock(), data: result };
     return res.json(result);
   };

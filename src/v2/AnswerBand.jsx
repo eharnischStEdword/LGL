@@ -68,6 +68,15 @@ function WeekBlock({ weeklyModel, fundLabel, now }) {
           <span>{fmtWeekLong(pending.endSunday)} &middot; {fundLabel}</span>
           <StatusPill complete={false} />
         </div>
+        {pending.parts && (
+          <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 4 }}>
+            {pending.parts.basket > 0
+              ? <>Sunday basket {fmtWhole(pending.parts.basket)} ({pending.parts.basketGifts} gifts) &middot; </>
+              : <>Sunday basket not entered yet &middot; </>}
+            online {fmtWhole(pending.parts.online)} so far
+            {pending.parts.mail > 0 && <> &middot; mail &amp; office {fmtWhole(pending.parts.mail)}</>}
+          </div>
+        )}
         <div style={{ fontSize: 12.5, color: T.ink3 }}>
           {now && startOfDay(now).getTime() > addDays(pending.endSunday, 4).getTime()
             ? <>Waiting on the money counters &middot; the count has not been entered yet.</>
@@ -77,7 +86,7 @@ function WeekBlock({ weeklyModel, fundLabel, now }) {
           {lc ? (
             <>
               <div style={{ fontSize: 12.5, color: T.ink2, marginBottom: 5 }}>
-                Last complete week: <b style={{ color: T.ink }}>{fmtWhole(lc.total)}</b> &middot; {fmtWeekLong(lc.endSunday)} <StatusPill complete />
+                Last complete week: <b style={{ color: T.ink }}>{fmtWhole(lc.total)}</b> &middot; {fmtWeekLong(lc.endSunday)}{lc.parts && <> &middot; basket {fmtWhole(lc.parts.basket)}</>} <StatusPill complete />
               </div>
               {comparisons}
             </>
@@ -96,6 +105,11 @@ function WeekBlock({ weeklyModel, fundLabel, now }) {
         <span>{fmtWeekLong(lc.endSunday)} &middot; {fundLabel}</span>
         <StatusPill complete />
       </div>
+      {lc.parts && (
+        <div style={{ fontSize: 12.5, color: T.ink2, marginBottom: 8 }}>
+          Sunday basket <b>{fmtWhole(lc.parts.basket)}</b> ({lc.parts.basketGifts} gifts) &middot; mail &amp; office {fmtWhole(lc.parts.mail)} &middot; online {fmtWhole(lc.parts.online)}
+        </div>
+      )}
       {comparisons}
     </Card>
   );

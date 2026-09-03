@@ -12,6 +12,41 @@ import { fmtLabel, fmtWhole, fmtWeekLabel, getFYLabel } from "./lib.js";
 export const WEEKLY_ALL = "__ALL__";
 const ALL = WEEKLY_ALL;
 
+// Bar segments on the Offertory view (2026-09-03), darkest at the baseline:
+// the Sunday basket is the number the money counters check, so it keeps the
+// fund's green; mail and office, then online, step lighter in the same hue,
+// because every part is still giving. Gold stays reserved for "in progress",
+// and blue for All Funds, so neither is used here.
+const PART_COLORS = { mail: "#4EA672", online: "#A6D8BA", untyped: "#c5ccc8" };
+
+function Swatch({ color }) {
+  return (
+    <span style={{
+      display: "inline-block", width: 10, height: 10, background: color,
+      borderRadius: 2, marginRight: 4, verticalAlign: -1,
+    }} />
+  );
+}
+
+// The tooltip's second half. The bar's total comes from the report file and
+// the parts from the live LGL read; when the two disagree by a dollar or more
+// the read's own total is named, so the screen never shows parts that fail to
+// add up to the number above them without saying so.
+function partsTitle(w) {
+  if (!w.parts) return "";
+  const p = w.parts;
+  // A counting week with no basket yet says so, rather than "$0 (0 gifts)".
+  if (!w.complete && p.basket === 0) {
+    return ` · Sunday basket not entered yet · online ${fmtWhole(p.online)} so far`
+      + (p.mail > 0 ? ` · mail & office ${fmtWhole(p.mail)} (${p.mailGifts})` : "");
+  }
+  let s = ` · Sunday basket ${fmtWhole(p.basket)} (${p.basketGifts} gifts)`
+    + ` · mail & office ${fmtWhole(p.mail)} (${p.mailGifts})`
+    + ` · online ${fmtWhole(p.online)}`;
+  if (Math.abs(p.total - w.total) >= 1) s += ` · live LGL read total ${fmtWhole(p.total)}`;
+  return s;
+}
+
 export default function RecentWeeks({ weeklyModel, weeklyFund, funds, onFundChange, fyPace, now }) {
   const fundLabel = weeklyFund === ALL ? "All Funds" : weeklyFund;
 
@@ -71,23 +106,39 @@ function WeeklyBody({ weeklyModel, fyPace, now }) {
         {weeks.map(w => {
           const h = Math.max((w.total / max) * H, w.total > 0 ? 3 : 0);
           const isLastComplete = lastComplete && w.key === lastComplete.key;
+          const basketColor = isLastComplete ? T.greenDark : T.green;
+          // A complete Offertory week draws as a stack of its parts. A counting
+          // week stays striped gold whatever the read says, because the stripe
+          // means "in progress" and that is still the truth about it.
+          const stacked = w.complete && w.parts && w.parts.total > 0;
+          const segments = stacked ? [
+            ["untyped", w.parts.untyped, PART_COLORS.untyped],
+            ["online", w.parts.online, PART_COLORS.online],
+            ["mail", w.parts.mail, PART_COLORS.mail],
+            ["basket", w.parts.basket, basketColor],
+          ].filter(([, v]) => v > 0) : [];
           return (
             <div key={w.key} style={{ flex: 1, minWidth: 52 }}
-              title={`${fmtWeekLabel(w.endSunday)}: ${fmtWhole(w.total)}${w.complete ? "" : " (still counting)"}${w.holyDay ? " · holy-day week" : ""}`}>
+              title={`${fmtWeekLabel(w.endSunday)}: ${fmtWhole(w.total)}${w.complete ? "" : " (still counting)"}${w.holyDay ? " · holy-day week" : ""}${partsTitle(w)}`}>
               <div style={{ height: H + 18, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end" }}>
                 <span style={{ fontSize: 11, color: w.complete ? T.ink2 : "#b09310", marginBottom: 4, fontVariantNumeric: "tabular-nums" }}>
                   {w.total > 0 ? fmtLabel(w.total) : "—"}
                 </span>
                 <div style={{
                   width: "100%", maxWidth: 44, height: h,
-                  borderRadius: "4px 4px 0 0",
-                  background: w.complete
-                    ? (isLastComplete ? T.greenDark : T.green)
+                  borderRadius: "4px 4px 0 0", overflow: "hidden",
+                  display: "flex", flexDirection: "column", justifyContent: "flex-end",
+                  background: stacked ? "transparent" : w.complete
+                    ? basketColor
                     : `repeating-linear-gradient(45deg, ${T.gold}55 0 5px, ${T.card} 5px 10px)`,
                   border: w.complete ? "none" : `1.5px dashed ${T.gold}`,
                   borderBottom: "none",
                   boxSizing: "border-box",
-                }} />
+                }}>
+                  {segments.map(([k, v, color]) => (
+                    <div key={k} style={{ flexGrow: v, flexBasis: 0, minHeight: 1, background: color }} />
+                  ))}
+                </div>
               </div>
               <div style={{ height: 40, fontSize: 11, color: T.ink3, marginTop: 6, textAlign: "center", lineHeight: 1.3 }}>
                 {isLastComplete ? <b style={{ color: T.ink2 }}>{fmtWeekLabel(w.endSunday)}</b> : fmtWeekLabel(w.endSunday)}
@@ -105,6 +156,13 @@ function WeeklyBody({ weeklyModel, fyPace, now }) {
           <span>
             <span style={{ display: "inline-block", width: 22, borderTop: `2px dashed ${T.blue}`, verticalAlign: 3, marginRight: 5 }} />
             4-week average of complete weeks ({fmtLabel(fourWeekAvg)})
+          </span>
+        )}
+        {weeks.some(w => w.parts) && (
+          <span style={{ color: T.ink2 }} title="Cash and checks dated to the Sunday are the basket the money counters counted; cash and checks on other days are mail and office; the rest is online. From a live read of LGL.">
+            <Swatch color={T.green} />Sunday basket&nbsp;&nbsp;
+            <Swatch color={PART_COLORS.mail} />mail &amp; office&nbsp;&nbsp;
+            <Swatch color={PART_COLORS.online} />online
           </span>
         )}
         {thisWeekSoFar != null && thisWeekSoFar > 0 && (

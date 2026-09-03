@@ -19,7 +19,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import express from "express";
 
-import { plateStatusHandler, detectPlate, weekWindow, PLATE_BASKET_FLOOR } from "../plate-status.js";
+import {
+  plateStatusHandler, detectPlate, weekWindow, weekWindows, clampWeeks,
+  PLATE_BASKET_FLOOR, MAX_WEEKS } from "../plate-status.js";
 import { _resetDump } from "../hub-exit.js";
 
 const START = "2026-08-10"; // Monday
@@ -229,6 +231,76 @@ test("a second ask inside the TTL is served from the cache", async () => {
     assert.deepEqual(second, first);
     assert.equal(calls.filter((c) => c.startsWith("updated_from")).length, 1);
   });
+});
+
+test("weeks=N returns each week's split, oldest first, from ONE read that reaches the oldest Monday", async () => {
+  const calls = [];
+  // The week ending 9 August: a 30-gift basket dated its Sunday, four mail
+  // cheques dated its Thursday, one card gift. Then WEEK with its basket.
+  const gifts = [
+    ...plate(30, "2026-08-09", 1000),
+    ...plate(4, "2026-08-06", 2000),
+    { id: 3000, fund_name: "Offertory", received_date: "2026-08-08", received_amount: 50, payment_type_name: "Card - VISA" },
+    ...BASKET,
+  ];
+  await serve(makeApp({ gifts, calls }), async (base) => {
+    const json = await fetch(`${base}/api/lgl-plate-status?week=${WEEK}&weeks=2`).then((r) => r.json());
+    // The newest week's judgement is where it always was.
+    assert.equal(json.week, WEEK);
+    assert.equal(json.plateLanded, true);
+    assert.equal(json.plateCount, PLATE_BASKET_FLOOR + 5);
+
+    assert.deepEqual(json.weeks.map((w) => w.week), ["2026-08-09", WEEK]);
+    const [older, newest] = json.weeks;
+    assert.equal(older.start, "2026-08-03");
+    assert.equal(older.sundayGifts, 30);
+    assert.equal(older.sundayCents, 30 * 2000);
+    assert.equal(older.midweekGifts, 4);
+    assert.equal(older.midweekCents, 4 * 2000);
+    assert.equal(older.onlineCents, 5000);
+    assert.equal(older.plateLanded, true);
+    assert.equal(older.giftCount, 35);
+    assert.equal(newest.sundayGifts, PLATE_BASKET_FLOOR + 5);
+    assert.equal(newest.midweekGifts, 0);
+    assert.equal(newest.midweekCents, 0);
+    assert.equal(newest.onlineCents, 4000);
+    // Sunday plus midweek is the plate figure the hub is sent, always.
+    for (const w of json.weeks) {
+      const d = detectPlate(gifts, w.start, w.week);
+      assert.equal(w.sundayGifts + w.midweekGifts, d.plateCount, `${w.week} parts do not add up`);
+    }
+
+    const reads = calls.filter((c) => c.startsWith("updated_from"));
+    assert.equal(reads.length, 1, "two weeks must not mean two reads");
+    const since = reads[0].split("=")[1];
+    assert.ok(since < "2026-08-03", `the read reached back only to ${since}, not before the oldest Monday`);
+  });
+});
+
+test("a plain ask still answers one week, and the split rides along for it", async () => {
+  await serve(makeApp(), async (base) => {
+    const json = await ask(base);
+    assert.equal(json.weeks.length, 1);
+    assert.equal(json.weeks[0].week, WEEK);
+    assert.equal(json.weeks[0].sundayGifts, PLATE_BASKET_FLOOR + 5);
+  });
+});
+
+test("weeks is clamped: nonsense is one week, and never more than MAX_WEEKS", () => {
+  assert.equal(clampWeeks(undefined), 1);
+  assert.equal(clampWeeks("eight"), 1);
+  assert.equal(clampWeeks("0"), 1);
+  assert.equal(clampWeeks("-3"), 1);
+  assert.equal(clampWeeks("8"), 8);
+  assert.equal(clampWeeks(String(MAX_WEEKS + 40)), MAX_WEEKS);
+});
+
+test("weekWindows walks back seven days at a time, oldest first, across a month end", () => {
+  assert.deepEqual(weekWindows("2026-08-02", 2), [
+    { startKey: "2026-07-20", weekKey: "2026-07-26" },
+    { startKey: "2026-07-27", weekKey: "2026-08-02" },
+  ]);
+  assert.deepEqual(weekWindows(WEEK, 1), [{ startKey: START, weekKey: WEEK }]);
 });
 
 // ─── The pieces, without a server ───
