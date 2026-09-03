@@ -183,10 +183,28 @@ reached Little Green Light at all: 11 January, 18 January, 1 February, 24 May,
 side; those gifts are simply not in LGL, months later. The batches that go
 missing are, every time, the ones **entered three or four days after the Sunday
 they are dated to**, while the same weekend's *same-day* mail batch comes
-through normally. That is the signature of an import keyed on the date a gift is
-dated rather than the date it was entered: anything backdated into a window that
-has already been imported is never picked up again. The fix for the money is
-upstream, in whatever moves Pushpay into LGL.
+through normally.
+
+**CAUSE PROVEN LATER THE SAME DAY, and it is Pushpay's export.** Gifts reach LGL
+by Eric exporting from Pushpay and running the Flex Importer, two or three times
+a week, 93 imports and none skipped. Pushpay's Transaction Period filter selects
+on the RECEIVED date and that report offers no filter on when a record was
+created: the Q2 2026 export, asked for as 1 April to 30 June, returns rows whose
+`Created On` runs to 10 July, 184 of them entered after the window's last day.
+So a basket typed in on 9 July for a 21 June Sunday is invisible to every export
+whose window has already passed 21 June, permanently. Nothing in this repository
+is involved and no setting fixes it; the remedy is that every export now takes a
+rolling 30 days, so a late batch is swept up by the next run. Recovered
+2026-08-28: 536 gifts. See D95 in the PLT repo.
+
+**A THEORY THAT WAS WRONG, recorded so nobody rebuilds it.** `pushpay-lgl-sync`,
+a Pushpay webhook receiver on Render's free plan, looked like the culprit: it
+sleeps, takes 72 seconds to wake, and was created three weeks before the losses
+begin. It never carried this money. Zero logs in thirty days while some five
+hundred gifts arrived, every LGL constituent id ends in `.0` (a spreadsheet
+float artifact, not an API write), and the gift records name a person and a
+dated gift batch. That service is live, does nothing, and its GitHub repository
+has been deleted.
 
 **WHY THIS MATTERS TO `plate-status.js` SPECIFICALLY, AND IT IS THE REASON THIS
 NOTE IS HERE.** `detectPlate` answers `plateLanded` with `.some()`: one gift of
