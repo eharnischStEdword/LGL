@@ -11,6 +11,7 @@ import {
 } from "./hub-exit.js";
 import { plateStatusHandler } from "./plate-status.js";
 import { fetchLGLApiGiftsAxis, fetchLGLApiGiftsPaged } from "./lgl-api.js";
+import { mergeApiGifts } from "./top-up.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -381,43 +382,6 @@ async function fetchLGLApiGifts(sinceDate, fundFilter, axis) {
   return gifts;
 }
 
-// Convert an LGL API gift object to a row matching the spreadsheet columns
-function apiGiftToRow(gift, dateCol, amountCol, fundCol, paymentCol) {
-  const row = {};
-  row[dateCol] = gift.received_date || "";
-  row[amountCol] = gift.received_amount || 0;
-  row[fundCol] = gift.fund_name || "";
-  // Carried when the report has the column, so a topped-up gift splits into
-  // basket, mail or online on v2 like the rows around it. v1 ignores it.
-  if (paymentCol) row[paymentCol] = gift.payment_type_name || (gift.payment_type && gift.payment_type.name) || "";
-  return row;
-}
-
-// Normalize any date value to YYYY-MM-DD for consistent dedup
-function normalizeDateForDedup(val) {
-  if (!val) return "";
-  // Excel serial number (e.g. 46093)
-  const num = typeof val === "number" ? val : parseFloat(val);
-  if (!isNaN(num) && num > 25000 && num < 60000) {
-    const d = new Date(1899, 11, 30 + Math.round(num));
-    if (!isNaN(d.getTime())) {
-      return d.toISOString().slice(0, 10);
-    }
-  }
-  // Try parsing as date string
-  const d = new Date(val);
-  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-  return String(val).trim();
-}
-
-// Build a dedup key from a row
-function deduplicateKey(row, dateCol, amountCol, fundCol) {
-  const dateStr = normalizeDateForDedup(row[dateCol]);
-  const amount = parseFloat(String(row[amountCol] || "0").replace(/[$,]/g, "")) || 0;
-  const fund = String(row[fundCol] || "").trim().toLowerCase();
-  return `${dateStr}|${amount.toFixed(2)}|${fund}`;
-}
-
 // 5-minute in-memory cache
 const hybridCache = {};
 const CACHE_TTL = 5 * 60 * 1000;
@@ -460,22 +424,10 @@ async function hybridFetch(permanentLinkUrl, fundFilter, res, axis) {
       const apiGifts = await fetchLGLApiGifts(reportDate, fundFilter, axis);
       console.log(`[hybrid] API returned ${apiGifts.length} gifts since ${reportDate}`);
 
-      // Build dedup set from permanent link rows
-      const seen = new Set();
-      for (const row of rows) {
-        seen.add(deduplicateKey(row, dateCol, amountCol, fundCol));
-      }
-
-      // Add new API gifts that aren't already in the permanent link
-      for (const gift of apiGifts) {
-        const newRow = apiGiftToRow(gift, dateCol, amountCol, fundCol, paymentCol);
-        const key = deduplicateKey(newRow, dateCol, amountCol, fundCol);
-        if (!seen.has(key)) {
-          rows.push(newRow);
-          seen.add(key);
-          apiGiftsAdded++;
-        }
-      }
+      // Add every API gift the report does not already hold. COUNTED, not
+      // merely seen: ninety envelopes for $20.00 on one Sunday are ninety
+      // gifts, and a Set kept one of them. See top-up.js.
+      apiGiftsAdded = mergeApiGifts(rows, apiGifts, { dateCol, amountCol, fundCol, paymentCol });
       console.log(`[hybrid] Added ${apiGiftsAdded} new gifts from API`);
     } catch (err) {
       console.warn("[hybrid] API top-up failed, returning permanent link data only:", err.message);

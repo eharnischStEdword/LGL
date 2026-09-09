@@ -402,6 +402,20 @@ evidence chart with Period/View segmented controls, merged Compare Years view
   `?weeks=N` (max 12) with per-week parts from summarizeOffertory, kept for
   SSH verification against the hub's figures, and the client asks `?week=`
   alone. Never put weeks=N on the dashboard's request.
+- The API top-up counts the report's rows, it does not merely see them
+  (2026-09-09, v1.12.1, `top-up.js`). The merge deduped on date|amount|fund
+  through a Set, so a second $20.00 gift dated to the same Sunday in the same
+  fund looked like a copy of the first and was dropped. A Sunday basket is
+  ninety-odd envelopes and most of them repeat an amount, so the basket
+  collapsed to its DISTINCT amounts: on 2026-09-04 v2 showed 30 August as
+  $3,512.00 across 21 gifts against the hub exit's $8,169.50 across 97, badged
+  Complete because the badge reads the live API while the figures came through
+  the merge. The report carries no gift id, so the key cannot be made to
+  identify a gift; instead the report's copies are counted and each API gift
+  consumes one of its own key, which is the old behaviour wherever keys are
+  unique. tests/top-up.test.js drives it; the merge left server.js so a test can
+  reach it without booting Express, like plate-status.js and hub-exit.js before
+  it.
 - v2 requests the API top-up with ?axis=union: server queries updated_from AND
   gift_date_from and merges, with guards (received-date post-filter + count
   heuristic) so an invalid gift_date_from key can never make results worse than
