@@ -2,7 +2,7 @@
 
 **Last updated:** April 8, 2026
 **Repo:** https://github.com/eharnischStEdword/LGL
-**Live:** https://lgl.onrender.com
+**Live:** https://lgldash.stedward.org (also https://lgl.onrender.com)
 **Owner:** Eric Harnisch (Harnisch LLC) for St. Edward Church, Nashville TN
 
 ---
@@ -44,7 +44,7 @@ Push to `main`. Render auto-deploys.
 | `CLIENT_ID` | Microsoft Entra app client ID |
 | `CLIENT_SECRET` | Microsoft Entra app secret |
 | `TENANT_ID` | Microsoft Entra tenant ID |
-| `REDIRECT_URI` | OAuth callback (`https://lgl.onrender.com/auth/callback`) |
+| `REDIRECT_URI` | OAuth callback (`https://lgldash.stedward.org/auth/callback`) |
 | `LGL_API_KEY` | LGL API key for real-time gift top-up |
 | `SESSION_SECRET` | Express session secret (auto-generated if unset) |
 | `ALLOWED_DASHBOARD_USERS` | Comma-separated authorized email addresses |

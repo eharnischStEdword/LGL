@@ -1,10 +1,8 @@
 import express from "express";
 import session from "express-session";
 import crypto from "crypto";
-import zlib from "zlib";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import * as XLSX from "xlsx";
 import {
   hubMetricsHandler,
   OFFERTORY_FUND,
@@ -12,6 +10,8 @@ import {
 import { plateStatusHandler } from "./plate-status.js";
 import { fetchLGLApiGiftsAxis, fetchLGLApiGiftsPaged } from "./lgl-api.js";
 import { mergeApiGifts } from "./top-up.js";
+import { readReportFile, parseReport } from "./report-file.js";
+import { signInHostRedirect } from "./auth-host.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -81,6 +81,9 @@ app.get("/auth/status", (req, res) => {
 // Start Microsoft login
 app.get("/auth/login", (req, res) => {
   if (!AUTH_ENABLED) return res.redirect("/");
+  // Begin on the callback's own address, or its state cookie never comes back.
+  const elsewhere = signInHostRedirect(req.hostname, REDIRECT_URI, req.query.moved);
+  if (elsewhere) return res.redirect(elsewhere);
   const state = crypto.randomBytes(16).toString("hex");
   req.session.oauthState = state;
   const params = new URLSearchParams({
@@ -204,50 +207,6 @@ app.get("/auth/logout", (req, res) => {
 
 // ─── Protected API ───
 
-// Extract the first .csv entry from a ZIP archive buffer.
-// LGL now delivers the large "FULL GIVING REPORT" (All Funds) export as a .zip
-// wrapping a single .csv, which browser SheetJS can't read ("Unsupported ZIP file").
-// A real .xlsx is also a zip, but its entries are OOXML parts (no .csv), so this
-// returns null for xlsx and the caller forwards it unchanged.
-// Reads sizes from the central directory so it is immune to streaming zips that
-// defer sizes to a data descriptor.
-function extractCsvFromZip(buf) {
-  const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
-  if (b.length < 22 || b.readUInt32LE(0) !== 0x04034b50) return null; // not a zip
-
-  // Find the End Of Central Directory record (scan back for PK\x05\x06)
-  let eocd = -1;
-  for (let i = b.length - 22; i >= 0 && i >= b.length - 22 - 65536; i--) {
-    if (b.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
-  }
-  if (eocd === -1) return null;
-
-  let cd = b.readUInt32LE(eocd + 16);
-  const entries = b.readUInt16LE(eocd + 10);
-  for (let e = 0; e < entries; e++) {
-    if (b.readUInt32LE(cd) !== 0x02014b50) return null; // bad central directory header
-    const method = b.readUInt16LE(cd + 10);
-    const compSize = b.readUInt32LE(cd + 20);
-    const nameLen = b.readUInt16LE(cd + 28);
-    const extraLen = b.readUInt16LE(cd + 30);
-    const commentLen = b.readUInt16LE(cd + 32);
-    const localOffset = b.readUInt32LE(cd + 42);
-    const name = b.slice(cd + 46, cd + 46 + nameLen).toString("utf-8");
-
-    if (name.toLowerCase().endsWith(".csv")) {
-      if (b.readUInt32LE(localOffset) !== 0x04034b50) return null;
-      const lNameLen = b.readUInt16LE(localOffset + 26);
-      const lExtraLen = b.readUInt16LE(localOffset + 28);
-      const dataStart = localOffset + 30 + lNameLen + lExtraLen;
-      const comp = b.slice(dataStart, dataStart + compSize);
-      const out = method === 8 ? zlib.inflateRawSync(comp) : comp; // 8=deflate, 0=stored
-      return out.toString("utf-8");
-    }
-    cd += 46 + nameLen + extraLen + commentLen;
-  }
-  return null;
-}
-
 // Helper to proxy an LGL permanent link
 async function proxyLGL(url, res) {
   const resp = await fetch(url);
@@ -261,9 +220,9 @@ async function proxyLGL(url, res) {
   if (dateMatch) {
     res.set("X-Report-Date", dateMatch[1]);
   }
-  // LGL now zips the large All Funds export. Unwrap to the inner CSV so the
-  // browser parses plain text instead of choking on a non-xlsx zip.
-  const csv = extractCsvFromZip(buf);
+  // LGL zips its exports around a CSV. Unwrap it so the browser parses plain
+  // text instead of choking on a zip that is not a workbook (report-file.js).
+  const { csv } = readReportFile(buf);
   if (csv !== null) {
     res.set("Content-Type", "text/csv; charset=utf-8");
     return res.send(csv);
@@ -287,19 +246,6 @@ app.get("/api/lgl-all-funds", requireAuth, async (req, res) => {
 });
 
 // ─── Hybrid API (permanent link + LGL API top-up) ───
-
-// Parse XLSX or CSV buffer into array of row objects (mirrors client-side logic)
-function parseSpreadsheetServer(buffer, contentType) {
-  let wb;
-  if (contentType && (contentType.includes("text/") || contentType.includes("csv"))) {
-    const text = Buffer.from(buffer).toString("utf-8");
-    wb = XLSX.read(text, { type: "string" });
-  } else {
-    wb = XLSX.read(Buffer.from(buffer), { type: "buffer" });
-  }
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  return XLSX.utils.sheet_to_json(ws, { defval: "" });
-}
 
 // Detect date/amount/fund columns (mirrors client-side detectColumns)
 function detectColumnsServer(headers) {
@@ -408,8 +354,8 @@ async function hybridFetch(permanentLinkUrl, fundFilter, res, axis) {
   const fallbackDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const reportDate = dateMatch ? dateMatch[1] : fallbackDate;
 
-  // 3. Parse spreadsheet into rows
-  const rows = parseSpreadsheetServer(buf, ct);
+  // 3. Parse spreadsheet into rows, unwrapping LGL's zip as proxyLGL does
+  const rows = parseReport(buf, ct);
   console.log(`[hybrid] Permanent link: ${rows.length} rows, report date: ${reportDate}`);
 
   // 4. Detect columns

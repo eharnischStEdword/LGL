@@ -15,7 +15,8 @@ Branded with official St. Edward colors. Data is fetched from LGL permanent link
 ## Deploy
 Push to main branch. Render auto-deploys from GitHub.
 - Repo: https://github.com/eharnischStEdword/LGL
-- Live: https://lgl.onrender.com
+- Live: https://lgldash.stedward.org (also answers at https://lgl.onrender.com,
+  whose sign-in hops to the parish address first; see auth-host.js)
 - Render build command: npm install && npm run build
 - Render start command: node server.js
 - Render type: Web Service (not Static Site)
@@ -32,7 +33,8 @@ Push to main branch. Render auto-deploys from GitHub.
   without booting Express or holding an API key
 - Node.js + Express backend in server.js
   - Proxies LGL permanent links (CORS)
-  - Hybrid endpoint: parses Offertory XLSX server-side, merges LGL API gifts
+  - Hybrid endpoint: parses the Offertory report server-side (a zip as of
+    2026-11-09, contents assumed CSV; report-file.js), merges LGL API gifts
   - Lightweight /api/lgl-recent-gifts endpoint for All Funds client-side top-up
   - Microsoft Entra ID SSO with email allow-list
 - Recharts for charts, SheetJS (xlsx) for spreadsheet parsing
@@ -44,7 +46,8 @@ Push to main branch. Render auto-deploys from GitHub.
 
 ## Environment Variables (Render)
 - CLIENT_ID, CLIENT_SECRET, TENANT_ID — Microsoft Entra SSO
-- REDIRECT_URI — OAuth callback (https://lgl.onrender.com/auth/callback)
+- REDIRECT_URI — OAuth callback, live value https://lgldash.stedward.org/auth/callback.
+  render.yaml still declares the onrender one; the live setting is what runs.
 - LGL_API_KEY — LGL API key for real-time gift top-up
 - SESSION_SECRET — auto-generated if not set
 - ALLOWED_DASHBOARD_USERS — comma-separated authorized emails
@@ -438,13 +441,20 @@ evidence chart with Period/View segmented controls, merged Compare Years view
 
 ## Deferred / Known Issues
 - The two v1 bugs carried here since 2026-06-21 left with v1 on 2026-11-09.
-- SEEN 2026-11-09, NOT FIXED: /api/lgl-data-hybrid answers 502 "Unsupported ZIP
-  file". It is the page's fallback when the All Funds report fails, so today
-  that fallback would fail too. The All Funds path is healthy.
-- SEEN 2026-11-09, NOT FIXED: REDIRECT_URI points at lgldash.stedward.org, so
-  signing in from lgl.onrender.com lands on "Invalid State". The parish address
-  works; the staff guide now names it. render.yaml, README and HANDOFF still
-  name the old host.
+- FIXED 2026-11-09 (v2.0.1): /api/lgl-data-hybrid answered 502 "Unsupported
+  ZIP file" (three times in Render's logs that day). The Offertory permanent
+  link now arrives as a zip, which the hybrid path handed to SheetJS without
+  the unwrap proxyLGL already did for All Funds. Both read through
+  report-file.js now. That the zip holds a CSV is INFERRED from the All Funds
+  precedent: the egress guard blocks reading the link from here. A zip holding
+  anything else answers 502 naming its entries, so the first live fallback
+  load settles it.
+- FIXED 2026-11-09 (v2.0.1): signing in from lgl.onrender.com landed on
+  "Invalid State". The sign-in state lives in a cookie on the host that started
+  it, and Microsoft returned to lgldash.stedward.org, which never had that
+  cookie. /auth/login on any other host now hops to the callback's host first
+  (auth-host.js, one hop, never a loop). UptimeRobot pings onrender /auth/login
+  every five minutes and still gets a 302.
 - SEEN 2026-11-09, NOT FIXED: the counted top-up merge still pairs by
   date|amount|fund, so a report gift the API does not return swallows one new
   gift of the same key. The All Funds report carries an "LGL gift ID" column;

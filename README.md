@@ -29,7 +29,7 @@ Data is pulled live from LGL via scheduled permanent links, topped up with real-
 - **Frontend:** React 18, Vite 6, Recharts (charts), SheetJS (spreadsheet parsing)
 - **Backend:** Node.js + Express server (`server.js`)
   - Proxies LGL permanent links (avoids CORS)
-  - Hybrid endpoint: parses Offertory XLSX server-side, merges with LGL API gifts
+  - Hybrid endpoint: parses the Offertory report server-side (unzipping it as LGL now sends it), merges with LGL API gifts
   - Lightweight recent-gifts endpoint for All Funds client-side top-up
   - Microsoft Entra ID (Azure AD) SSO authentication
   - User allow-list (email-based)
@@ -43,7 +43,7 @@ Set these in Render (or `.env` for local dev):
 | `CLIENT_ID` | Yes | Microsoft Entra app registration client ID |
 | `CLIENT_SECRET` | Yes | Microsoft Entra client secret (enables auth) |
 | `TENANT_ID` | Yes | Microsoft Entra tenant ID |
-| `REDIRECT_URI` | Yes | OAuth callback URL (e.g. `https://lgl.onrender.com/auth/callback`) |
+| `REDIRECT_URI` | Yes | OAuth callback URL (live: `https://lgldash.stedward.org/auth/callback`). Sign-in started on any other address is sent there first |
 | `LGL_API_KEY` | Yes | LGL API key for real-time gift top-up |
 | `SESSION_SECRET` | No | Auto-generated if not set |
 | `ALLOWED_DASHBOARD_USERS` | No | Comma-separated emails (defaults to hardcoded list in server.js) |
