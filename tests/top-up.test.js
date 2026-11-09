@@ -5,7 +5,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mergeApiGifts, deduplicateKey } from "../top-up.js";
+import { mergeApiGifts, mergeRecentGifts, deduplicateKey } from "../top-up.js";
 
 const COLS = { dateCol: "Date", amountCol: "Amount", fundCol: "Fund",
                paymentCol: "Payment type" };
@@ -78,4 +78,18 @@ test("the key still ignores the columns it never had", () => {
   // fund, and that is all it has ever been.
   assert.equal(deduplicateKey(reportRow(20), "Date", "Amount", "Fund"),
                "2026-08-30|20.00|offertory");
+});
+
+test("the page's own top-up counts repeated gifts too", () => {
+  // The page merges /api/lgl-recent-gifts into the All Funds report itself, and
+  // kept the Set after the server lost it: on 2026-11-09 it showed 40 of 47
+  // topped-up Offertory gifts, $253.41 short.
+  const rows = [reportRow(20)];
+  const recent = [20, 20, 20].map((amount) => ({
+    date: "2026-08-30", amount, fund: "Offertory", paymentType: "Cash" }));
+  const added = mergeRecentGifts(rows, recent, COLS);
+
+  assert.equal(added, 2, "one is the report's own, the other two are new gifts");
+  assert.equal(rows.length, 3);
+  assert.equal(rows[2]["Payment type"], "Cash");
 });

@@ -12,12 +12,13 @@ import RecentWeeks, { WEEKLY_ALL } from "./RecentWeeks.jsx";
 import EvidenceSection, { monthBucketsForPeriod } from "./EvidenceSection.jsx";
 import FundLedger from "./FundLedger.jsx";
 import Tour, { TOUR_SEEN_KEY } from "./Tour.jsx";
+import { mergeRecentGifts } from "../../top-up.js";
 
 // v2: one scrolling page in meeting order — answers, evidence, controls on
 // demand. Data auto-loads on arrival: the All Funds report plus the API
 // top-up on the union axis (see server.js fetchLGLApiGifts); if the big
 // report fails, we fall back to the Offertory hybrid endpoint with a plain
-// banner. All math comes from src/v2/lib.js, which mirrors v1 verbatim.
+// banner. All math comes from src/v2/lib.js.
 
 // Stable fund colors: a fund keeps its slot for as long as it stays selected;
 // adding or removing other funds never repaints it. 5th+ funds get grays.
@@ -107,19 +108,6 @@ function SectionShell({ id, label, index, count, arranging, onMove, onDragStart,
       </div>
     </div>
   );
-}
-
-// Normalize any date value to YYYY-MM-DD for dedup (v1 semantics)
-function normDate(val) {
-  if (!val) return "";
-  const num = typeof val === "number" ? val : parseFloat(val);
-  if (!isNaN(num) && num > 25000 && num < 60000) {
-    const d = new Date(1899, 11, 30 + Math.round(num));
-    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-  }
-  const d = new Date(val);
-  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-  return String(val).trim();
 }
 
 export default function DashboardV2() {
@@ -247,26 +235,9 @@ export default function DashboardV2() {
             if (gifts.length > 0) {
               const cols = detectColumns(Object.keys(rows[0]));
               if (cols.dateCol && cols.amountCol && cols.fundCol) {
-                const seen = new Set();
-                for (const row of rows) {
-                  const d = normDate(row[cols.dateCol]);
-                  const a = parseFloat(String(row[cols.amountCol] || "0").replace(/[$,]/g, "")) || 0;
-                  const f = String(row[cols.fundCol] || "").trim().toLowerCase();
-                  seen.add(`${d}|${a.toFixed(2)}|${f}`);
-                }
-                for (const g of gifts) {
-                  const key = `${normDate(g.date)}|${Number(g.amount).toFixed(2)}|${(g.fund || "").toLowerCase()}`;
-                  if (!seen.has(key)) {
-                    const newRow = {};
-                    newRow[cols.dateCol] = g.date;
-                    newRow[cols.amountCol] = g.amount;
-                    newRow[cols.fundCol] = g.fund;
-                    if (cols.paymentCol) newRow[cols.paymentCol] = g.paymentType || "";
-                    rows.push(newRow);
-                    seen.add(key);
-                    added++;
-                  }
-                }
+                // The counted merge the server uses (top-up.js): a second
+                // $20.00 gift on the same Sunday is a gift, not a copy.
+                added = mergeRecentGifts(rows, gifts, cols);
               }
             }
           }

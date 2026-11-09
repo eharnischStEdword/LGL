@@ -78,3 +78,12 @@ export function mergeApiGifts(rows, apiGifts, cols) {
   }
   return added;
 }
+
+// The same merge for the browser, which gets its gifts from
+// /api/lgl-recent-gifts as { date, amount, fund, paymentType }.
+export function mergeRecentGifts(rows, gifts, cols) {
+  return mergeApiGifts(rows, gifts.map((g) => ({
+    received_date: g.date, received_amount: g.amount,
+    fund_name: g.fund, payment_type_name: g.paymentType,
+  })), cols);
+}

@@ -8,16 +8,15 @@ Data is pulled live from LGL via scheduled permanent links, topped up with real-
 
 1. **Permanent links** — LGL generates daily exports (XLSX/CSV) of all gifts. The server proxies these to the browser.
 2. **API top-up** — After loading the permanent link data, the dashboard fetches any gifts added or updated since the report was generated, so data is current to the minute.
-3. **Two views** — "Load Offertory Data" (Offertory fund only, server-parsed with API top-up) and "Load All Funds Report" (all funds, client-parsed with API top-up).
+3. **One page.** The All Funds report loads on arrival and opens on the Offertory. The classic view with its two load buttons was retired on 2026-11-09.
 
 ## Dashboard features
 
-- **Time ranges:** Fiscal Year (starts July 1), Year to Date, Last 12 and Last 24 Months, All (since July 2019), plus Year-over-Year and multi-year Fiscal Year comparison views.
-- **Per-fund trend badge:** for each selected fund, shows that fund's giving this period versus the same fund's giving in the equivalent prior-year window, using completed months only. A brand-new fund reads "New this FY" instead of a misleading percentage. This is a true period-over-period comparison, not the slope of a trendline.
-- **Fund search:** type to filter the fund list. While a search is active, the All and None buttons act on the matching funds only.
-- **Fund Totals table:** every fund's total for the selected range, sorted highest to lowest, with an All Funds grand total on top. Click any row to add or remove that fund from the chart.
-- **Chart options:** line or bar, an optional logarithmic scale for comparing funds of very different sizes (months with $0 appear as a gap, since zero cannot plot on a log axis), and collision-aware data labels that always keep a fund's largest spike labeled.
-- **Financial Snapshot:** a bulletin-ready summary of monthly Offertory with month-over-month and year-over-year comparisons, plus a copy-to-clipboard button.
+- **Answers first:** how giving was this week, whether the fiscal year is ahead of last year, and which funds moved, with a Copy for Bulletin button for the monthly Offertory snapshot.
+- **Recent Weeks:** eight weekly bars for any fund. Offertory bars show their parts (Sunday basket, mail and office, online), and the newest week reads Counting until its cash and check count is entered, or from the Thursday after when LGL cannot be asked.
+- **Chart:** this fiscal year, the last 12 months, the calendar year to date or everything since 2019, as a monthly trend, a year-against-year comparison or a table, drawn as lines or bars with an optional logarithmic scale.
+- **Fund list:** every fund with activity in the period, ranked, with a search box. Click a fund to chart it.
+- **Layout:** each person can reorder the sections in their own browser, and a short walkthrough runs on a first visit.
 
 ## Data correctness notes
 
@@ -93,7 +92,6 @@ Auto-deploys on every push to main.
 These are documented and intentionally deferred:
 
 - The recent-gifts API top-up filters by gift **update** date, but the dashboard buckets gifts by gift (**received**) date. A gift received after the daily report yet last edited before it can be missed until the next export catches it. **`gift_date_from` is NOT the fix**: LGL answers `400 Unknown query parameter` for it, verified against the live API, and asking for it is what killed the plate-status detector for five days in August 2026. The working shape is `updated_from` with a lookback wide enough to cover late entry, then a filter on `received_date` — which is what `fetchGiftsForRange` in `hub-exit.js` does for the hub exit and the plate detector.
-- The Year-over-Year view currently hardcodes calendar years 2025 and 2026.
 
 ## Brand colors
 

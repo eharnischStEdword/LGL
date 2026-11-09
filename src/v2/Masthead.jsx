@@ -57,10 +57,6 @@ export default function Masthead({ authUser, fileName, giftCount, fundCount, dat
           <span style={{ fontFamily: T.serif, fontSize: 22, color: T.greenDark, fontWeight: 700, lineHeight: 1.1 }}>
             St. Edward Giving
           </span>
-          <span style={{
-            fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase",
-            background: T.blue, color: "#fff", borderRadius: 4, padding: "2px 7px",
-          }}>v2 preview</span>
         </div>
         <div style={{ fontSize: 13, color: T.ink2, marginTop: 2, display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
           {dataLoadedAt && (
@@ -97,10 +93,6 @@ export default function Masthead({ authUser, fileName, giftCount, fundCount, dat
           padding: "6px 13px", background: T.card, border: `1px solid ${T.hairline}`,
           borderRadius: 6, color: T.blue, fontWeight: 600, textDecoration: "none",
         }}>Staff guide</a>
-        <a href="/" style={{
-          padding: "6px 13px", background: T.card, border: `1px solid ${T.hairline}`,
-          borderRadius: 6, color: T.greenDark, fontWeight: 600, textDecoration: "none",
-        }}>Classic view</a>
       </div>
     </div>
   );

@@ -22,12 +22,12 @@ Push to main branch. Render auto-deploys from GitHub.
 
 ## Architecture
 - React 18 frontend built with Vite 6
-  - v1 (default, at /): all UI in src/Dashboard.jsx — frozen, do not modify while
-    v2 is staging (sole exception so far: the "Try the New View (v2)" button on
-    the landing screen, added at Eric's ask 2026-08-11)
-  - v2 (staging, at /v2): src/v2/* — DashboardV2.jsx orchestrator; lib.js holds
-    math copied VERBATIM from v1 plus the new weekly engine; historical.js is a
-    verbatim copy of HISTORICAL_MONTHLY. src/App.jsx routes on pathname.
+  - ONE DASHBOARD, at every path (v2.0.0, 2026-11-09, Eric: "it's time to
+    retire v1"). src/v2/* — DashboardV2.jsx orchestrator; lib.js holds the
+    monthly math and the weekly engine; historical.js holds HISTORICAL_MONTHLY.
+    The classic view (src/Dashboard.jsx, the old default at /) is deleted; /v2
+    still answers because the SPA catch-all serves every path, so bookmarks
+    work. "v1" below this line is history, not something that runs.
 - lgl-api.js: every call to the LGL gift search, so the paging can be tested
   without booting Express or holding an API key
 - Node.js + Express backend in server.js
@@ -352,8 +352,8 @@ giving in LGL that the Pushpay export does not carry.
   in-progress month is excluded from comparison totals (marked * on the YoY chart)
 - Single left Y-axis (the earlier right axis was removed)
 
-## v2 (staging) — added 2026-08-10
-Live at /v2 behind the same SSO; v1 remains the default. Design doc:
+## The dashboard (built as v2, 2026-08-10; the only view since 2026-11-09)
+Live at / and /v2 behind the SSO. Design doc:
 docs/v2-proposal.html. Answer-first single page: Monday briefing (three answer
 blocks + Copy for Bulletin, payload byte-identical to v1), Recent Weeks panel,
 evidence chart with Period/View segmented controls, merged Compare Years view
@@ -416,6 +416,12 @@ evidence chart with Period/View segmented controls, merged Compare Years view
   unique. tests/top-up.test.js drives it; the merge left server.js so a test can
   reach it without booting Express, like plate-status.js and hub-exit.js before
   it.
+- THE PAGE'S OWN TOP-UP KEPT THE SET UNTIL 2026-11-09 (v2.0.0). The fix above
+  was server.js's hybrid merge; DashboardV2.jsx merges /api/lgl-recent-gifts
+  into the All Funds report in the browser and still deduped through a Set, so
+  on an import day the page ran short (40 of 47 Offertory gifts, $253.41, the
+  day it was found) until the next morning's report. It calls
+  `mergeRecentGifts` in top-up.js now: one merge, both sides.
 - v2 requests the API top-up with ?axis=union: server queries updated_from AND
   gift_date_from and merges, with guards (received-date post-filter + count
   heuristic) so an invalid gift_date_from key can never make results worse than
@@ -430,13 +436,19 @@ evidence chart with Period/View segmented controls, merged Compare Years view
   node, v1-fidelity diff, UI + server review); 11 confirmed findings fixed
   pre-ship.
 
-## Deferred / Known Issues (flagged 2026-06-21)
-A 2026-06-21 multi-agent audit found 17 confirmed correctness bugs. All but the
-two below were fixed in commit 2f0a3e8. Status after the 2026-08-10 v2 work:
-- v1 recent-gifts query still filters by gift UPDATE date (q[] updated_from);
-  v1 behavior is intentionally unchanged. v2 uses the guarded union axis above.
-- v1 YoY view still hardcodes calendar years 2025/2026 (mislabels after July
-  2026). v2's Compare Years computes its years. Fix v1 only if it stays around.
+## Deferred / Known Issues
+- The two v1 bugs carried here since 2026-06-21 left with v1 on 2026-11-09.
+- SEEN 2026-11-09, NOT FIXED: /api/lgl-data-hybrid answers 502 "Unsupported ZIP
+  file". It is the page's fallback when the All Funds report fails, so today
+  that fallback would fail too. The All Funds path is healthy.
+- SEEN 2026-11-09, NOT FIXED: REDIRECT_URI points at lgldash.stedward.org, so
+  signing in from lgl.onrender.com lands on "Invalid State". The parish address
+  works; the staff guide now names it. render.yaml, README and HANDOFF still
+  name the old host.
+- SEEN 2026-11-09, NOT FIXED: the counted top-up merge still pairs by
+  date|amount|fund, so a report gift the API does not return swallows one new
+  gift of the same key. The All Funds report carries an "LGL gift ID" column;
+  matching on it would need /api/lgl-recent-gifts to send the id.
 
 ## User
 Eric is not a developer. Explain before running destructive commands.

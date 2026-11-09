@@ -49,12 +49,12 @@
 
 <header>
   <h1>Fund Giving Dashboard</h1>
-  <div class="sub">St. Edward Church and School &middot; Staff guide &middot; Updated August 28, 2026 &middot; Owner: Eric Harnisch, <a href="mailto:eharnisch@stedward.org">eharnisch@stedward.org</a></div>
+  <div class="sub">St. Edward Church and School &middot; Staff guide &middot; Updated November 9, 2026 &middot; Owner: Eric Harnisch, <a href="mailto:eharnisch@stedward.org">eharnisch@stedward.org</a></div>
 </header>
 
 <div class="card">
   <table class="facts">
-    <tr><td>Live link</td><td><a href="https://lgl.onrender.com">lgl.onrender.com</a> (Classic view) &middot; <a href="https://lgl.onrender.com/v2">lgl.onrender.com/v2</a> (new view, in preview)</td></tr>
+    <tr><td>Live link</td><td><a href="https://lgldash.stedward.org">lgldash.stedward.org</a></td></tr>
     <tr><td>Sign-in</td><td>Your @stedward.org Microsoft account, plus an email allow-list. Being staff is not enough; your address must be on the list.</td></tr>
     <tr><td>Hosting</td><td>Render web service st-edward-fund-dashboard (Node 20)</td></tr>
     <tr><td>Data</td><td>Nothing stored. Two scheduled LGL report exports, plus the LGL API for gifts newer than the last export. Sessions and cache live in memory only.</td></tr>
@@ -65,13 +65,11 @@
 <h2>What it is</h2>
 <p>A read-only window into giving data that lives in Little Green Light (LGL). Fund-by-fund totals, time-range comparisons, year-over-year views, weekly collection tracking, and a copy-to-clipboard monthly Offertory snapshot for the bulletin. The dashboard never writes anything back to LGL.</p>
 
-<h2>The two views</h2>
+<h2>What you see</h2>
 <div class="card">
-  <h3 style="margin-top:0">New view (lgl.onrender.com/v2)</h3>
-  <p>Answers first. The top row answers three questions: How was giving this week? Are we ahead of last year? Which funds moved? Below that: Recent Weeks (eight weekly bars), a chart with period and view controls, a computed Compare Years view, a ranked fund ledger, and a pivot table. The Copy for Bulletin button produces the same snapshot the Classic view does. This view will become the default once it has settled.</p>
+  <p>Answers first. The top row answers three questions: How was giving this week? Are we ahead of last year? Which funds moved? Below that: Recent Weeks (eight weekly bars), a chart with period and view controls, a computed Compare Years view, a ranked fund ledger, and a pivot table. The Copy for Bulletin button produces the monthly Offertory snapshot for the bulletin.</p>
   <p>The first time you open it, a short walkthrough points out the main pieces; replay it anytime with the <b>&#10038; Walkthrough</b> button at the top. And if the page feels like too much, click <b>Customize layout</b> (upper right) to drag the sections into your own order, chart on top if you like. Your order saves on the computer you set it on and changes nothing for anyone else.</p>
-  <h3>Classic view (lgl.onrender.com)</h3>
-  <p>The original dashboard. Load Offertory Data (Offertory only) or Load All Funds Report (every fund), pick a time range (Fiscal Year, Year to Date, Last 12 or 24 Months, All, Year-over-Year, or a multi-year comparison), use the fund search and Fund Totals table to toggle funds on the chart, and use the Financial Snapshot copy button for the bulletin figure.</p>
+  <p>The Classic view was retired on November 9, 2026.</p>
 </div>
 
 <h2>How the numbers arrive</h2>
@@ -94,8 +92,7 @@
     <li><b>Numbers look a touch behind:</b> this is about the dashboard reading LGL, and nothing else. The dashboard runs on a scheduled export plus a live top-up, so a gift back-dated inside LGL can lag until the next export catches it. Known and accepted. It does NOT describe the Pushpay export above, where a back-dated gift is not late, it is missed for good.</li>
     <li><b>The newest week looks low:</b> check its label first. If it says Counting, the cash and check count has not been entered yet; the number is online gifts so far.</li>
     <li><b>Everyone got signed out:</b> normal after a deploy or restart; sessions are in memory. Sign back in.</li>
-    <li><b>Year-over-Year labels look wrong in the Classic view:</b> known deferred bug (it hardcodes 2025 and 2026, so labels drift after July 2026). The new view's Compare Years computes its years correctly.</li>
-    <li><b>All Funds view stops loading:</b> LGL zips its export; the unzipper in server.js is the usual break point if LGL changes formats again.</li>
+    <li><b>The page shows Offertory only, or will not load:</b> LGL zips its export; the unzipper in server.js is the usual break point if LGL changes formats again.</li>
   </ul>
 </div>
 
@@ -117,7 +114,7 @@
 </ul>
 
 <footer>
-  This page is served by the dashboard itself at lgl.onrender.com/docs, behind the same sign-in, and is the current version of the internal Word document "Fund Giving Dashboard (LGL)".
+  This page is served by the dashboard itself at lgldash.stedward.org/docs, behind the same sign-in, and is the current version of the internal Word document "Fund Giving Dashboard (LGL)".
 </footer>
 
 </div>
