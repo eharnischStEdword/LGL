@@ -1,7 +1,7 @@
 // What LGL's permanent links send, read the way the hybrid fallback and the
-// report proxy read it. The Offertory report arriving as a zip that is not a
-// workbook turned the fallback into "Unsupported ZIP file" on 2026-11-09; a
-// CSV inside is assumed from the All Funds report, which is one.
+// report proxy read it. All Funds comes as a zip around a CSV; on 2026-11-09
+// the Offertory report came as a zip around an .xlsx, named as below, and the
+// fallback answered "Unsupported ZIP file".
 // Every fixture is built here; no real report is used.
 //
 // Run with: npm test
@@ -18,8 +18,8 @@ import { mergeApiGifts } from "../top-up.js";
 function zipOf(files) {
   const locals = [], centrals = [];
   let offset = 0;
-  for (const [name, text] of files) {
-    const data = Buffer.from(text, "utf-8");
+  for (const [name, content] of files) {
+    const data = Buffer.isBuffer(content) ? content : Buffer.from(content, "utf-8");
     const comp = zlib.deflateRawSync(data);
     const nameBuf = Buffer.from(name, "utf-8");
     const crc = zlib.crc32(data);
@@ -59,6 +59,23 @@ const CSV = [
 // What the zip header says LGL sends: not text, so the type cannot be trusted.
 const ZIP_TYPE = "application/zip";
 
+// The name LGL put inside the Offertory zip, slash and all.
+const OFFERTORY_ENTRY = "Offertory/Fund Export Update 2026-11-09.xlsx";
+const workbookOf = (csv) =>
+  XLSX.write(XLSX.read(csv, { type: "string" }), { type: "buffer", bookType: "xlsx" });
+
+test("the Offertory report zipped around a workbook parses instead of failing", () => {
+  const zipped = zipOf([[OFFERTORY_ENTRY, workbookOf(CSV)]]);
+  assert.throws(() => XLSX.read(zipped, { type: "buffer" }), /Unsupported ZIP file/);
+
+  const read = readReportFile(zipped);
+  assert.equal(read.unwrapped, true);
+  const rows = parseReport(zipped, ZIP_TYPE);
+  assert.equal(rows.length, 3);
+  assert.deepEqual(Object.keys(rows[0]).slice(0, 4), ["Gift date", "Gift amount", "Fund", "Payment type"]);
+  assert.equal(rows.reduce((sum, r) => sum + Number(r["Gift amount"]), 0), 190);
+});
+
 test("a report zipped around a CSV parses instead of failing", () => {
   const zipped = zipOf([["Offertory Fund Export Update 2026-11-09.csv", CSV]]);
   // The defect: SheetJS reading the zip as a workbook.
@@ -71,11 +88,13 @@ test("a report zipped around a CSV parses instead of failing", () => {
 });
 
 test("a gift in both the unzipped report and the API counts once", () => {
-  for (const [label, csv] of [
-    ["ISO dates", CSV],
-    ["US dates", CSV.replaceAll("2026-11-01", "11/1/2026").replaceAll("2026-11-02", "11/2/2026")],
+  const US = CSV.replaceAll("2026-11-01", "11/1/2026").replaceAll("2026-11-02", "11/2/2026");
+  for (const [label, zipped] of [
+    ["CSV, ISO dates", zipOf([["report.csv", CSV]])],
+    ["CSV, US dates", zipOf([["report.csv", US]])],
+    ["workbook, date cells", zipOf([[OFFERTORY_ENTRY, workbookOf(US)]])],
   ]) {
-    const rows = parseReport(zipOf([["report.csv", csv]]), ZIP_TYPE);
+    const rows = parseReport(zipped, ZIP_TYPE);
     const api = (date, amount, payment) =>
       ({ received_date: date, received_amount: amount, fund_name: "Offertory", payment_type_name: payment });
     const added = mergeApiGifts(rows, [
@@ -111,6 +130,6 @@ test("plain CSV text is read as text, as the proxy forwards it", () => {
 });
 
 test("a zip holding neither a CSV nor a workbook is refused by name", () => {
-  const odd = zipOf([["Offertory Fund Export.xlsx", "not really a workbook"]]);
-  assert.throws(() => readReportFile(odd), /no CSV or workbook in it \(it holds: Offertory Fund Export\.xlsx\)/);
+  const odd = zipOf([["Offertory Fund Export.pdf", "not a report"]]);
+  assert.throws(() => readReportFile(odd), /no CSV or workbook in it \(it holds: Offertory Fund Export\.pdf\)/);
 });

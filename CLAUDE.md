@@ -33,8 +33,8 @@ Push to main branch. Render auto-deploys from GitHub.
   without booting Express or holding an API key
 - Node.js + Express backend in server.js
   - Proxies LGL permanent links (CORS)
-  - Hybrid endpoint: parses the Offertory report server-side (a zip as of
-    2026-11-09, contents assumed CSV; report-file.js), merges LGL API gifts
+  - Hybrid endpoint: parses the Offertory report server-side (a zip around an
+    .xlsx since at least 2026-11-09; report-file.js), merges LGL API gifts
   - Lightweight /api/lgl-recent-gifts endpoint for All Funds client-side top-up
   - Microsoft Entra ID SSO with email allow-list
 - Recharts for charts, SheetJS (xlsx) for spreadsheet parsing
@@ -441,14 +441,12 @@ evidence chart with Period/View segmented controls, merged Compare Years view
 
 ## Deferred / Known Issues
 - The two v1 bugs carried here since 2026-06-21 left with v1 on 2026-11-09.
-- FIXED 2026-11-09 (v2.0.1): /api/lgl-data-hybrid answered 502 "Unsupported
+- FIXED 2026-11-09 (v2.0.2): /api/lgl-data-hybrid answered 502 "Unsupported
   ZIP file" (three times in Render's logs that day). The Offertory permanent
-  link now arrives as a zip, which the hybrid path handed to SheetJS without
-  the unwrap proxyLGL already did for All Funds. Both read through
-  report-file.js now. That the zip holds a CSV is INFERRED from the All Funds
-  precedent: the egress guard blocks reading the link from here. A zip holding
-  anything else answers 502 naming its entries, so the first live fallback
-  load settles it.
+  link now arrives as a zip around "Offertory/Fund Export Update <date>.xlsx",
+  which the hybrid path handed to SheetJS whole. v2.0.1 assumed a CSV inside,
+  like All Funds, and its own refusal named the .xlsx on the first live load;
+  v2.0.2 takes the workbook out. Both readers go through report-file.js.
 - FIXED 2026-11-09 (v2.0.1): signing in from lgl.onrender.com landed on
   "Invalid State". The sign-in state lives in a cookie on the host that started
   it, and Microsoft returned to lgldash.stedward.org, which never had that

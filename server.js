@@ -220,17 +220,19 @@ async function proxyLGL(url, res) {
   if (dateMatch) {
     res.set("X-Report-Date", dateMatch[1]);
   }
-  // LGL zips its exports around a CSV. Unwrap it so the browser parses plain
-  // text instead of choking on a zip that is not a workbook (report-file.js).
-  const { csv } = readReportFile(buf);
+  // LGL zips its exports around a CSV or an .xlsx. Unwrap either so the browser
+  // never gets a zip that is not a workbook (report-file.js).
+  const { csv, buffer, unwrapped } = readReportFile(buf);
   if (csv !== null) {
     res.set("Content-Type", "text/csv; charset=utf-8");
     return res.send(csv);
   }
-  // Otherwise forward as-is (real .xlsx, or a plain .csv)
-  const ct = resp.headers.get("content-type") || "application/octet-stream";
+  // Otherwise the workbook or plain .csv as it came, or the .xlsx from the zip
+  const ct = unwrapped
+    ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    : resp.headers.get("content-type") || "application/octet-stream";
   res.set("Content-Type", ct);
-  res.send(buf);
+  res.send(buffer);
 }
 
 // Offertory-only report

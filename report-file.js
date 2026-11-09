@@ -1,11 +1,10 @@
 // Turning what an LGL permanent link sends into rows.
 //
-// LGL has sent the All Funds export as a zip around a CSV since June 2026. On
-// 2026-11-09 the Offertory report also came back as a zip that is not a
-// workbook, and the hybrid endpoint, parsing it without unwrapping, answered
-// "Unsupported ZIP file". Its contents were not seen; a CSV is assumed from All
-// Funds and anything else is refused by name. A real .xlsx is also a zip, so
-// what is inside decides. Both proxyLGL and the hybrid endpoint read here.
+// LGL has sent the All Funds export as a zip around a CSV since June 2026, and
+// on 2026-11-09 the Offertory report arrived as a zip around an .xlsx, which
+// the hybrid endpoint handed to SheetJS whole: "Unsupported ZIP file". A real
+// .xlsx is itself a zip, so what is inside decides, not the first four bytes.
+// Both proxyLGL and the hybrid endpoint read through here.
 
 import zlib from "zlib";
 import * as XLSX from "xlsx";
@@ -46,8 +45,8 @@ function inflateEntry(b, entry) {
 }
 
 // { csv } for a zipped CSV, { buffer } for anything SheetJS reads as it stands
-// (a workbook, or plain text). A zip holding neither is refused by name, so the
-// first live load says what LGL sent instead of "Unsupported ZIP file".
+// (a workbook, plain text, or a workbook taken out of a zip, which also sets
+// `unwrapped`). Any other zip is refused by the names inside it.
 export function readReportFile(buf) {
   const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
   const entries = zipEntries(b);
@@ -59,6 +58,12 @@ export function readReportFile(buf) {
     if (out) return { csv: out.toString("utf-8"), buffer: null };
   }
   if (entries.some(e => e.name === "[Content_Types].xml")) return { csv: null, buffer: b };
+
+  const xlsxEntry = entries.find(e => e.name.toLowerCase().endsWith(".xlsx"));
+  if (xlsxEntry) {
+    const out = inflateEntry(b, xlsxEntry);
+    if (out) return { csv: null, buffer: out, unwrapped: true };
+  }
 
   const names = entries.map(e => e.name).join(", ") || "nothing";
   throw new Error(`LGL sent a zip with no CSV or workbook in it (it holds: ${names})`);
